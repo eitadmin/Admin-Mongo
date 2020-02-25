@@ -1,0 +1,542 @@
+package com.eiw.device.handler;
+
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.InputStream;
+import java.net.Socket;
+import java.net.URL;
+import java.net.URLConnection;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import org.apache.commons.io.IOUtils;
+import org.jboss.logging.Logger;
+import org.json.JSONObject;
+
+import com.eiw.device.apmkt.ais1401A.APMKT_AIS1401AByteWrapper;
+import com.eiw.device.ejb.FleetTrackingDeviceListenerBORemote;
+import com.eiw.device.ejb.VehicleComposite;
+import com.eiw.device.handler.method.SKTHandlerMethods;
+import com.eiw.device.listener.ListenerStarter;
+import com.eiw.device.meitrack.Position;
+import com.eiw.server.TimeZoneUtil;
+import com.eiw.server.bo.BOFactory;
+import com.eiw.server.fleettrackingpu.Heartbeatevent;
+import com.eiw.server.fleettrackingpu.HeartbeateventId;
+import com.eiw.server.fleettrackingpu.Vehicle;
+import com.eiw.server.fleettrackingpu.Vehicleevent;
+import com.eiw.server.fleettrackingpu.VehicleeventId;
+
+public class APMKT_AIS1401ADeviceHandler extends DeviceHandler {
+	private static final Logger LOGGER = Logger.getLogger("listener");
+	FleetTrackingDeviceListenerBORemote fleetTrackingDeviceListenerBO = BOFactory
+			.getFleetTrackingDeviceListenerBORemote();
+	private SKTHandlerMethods sktHandlerMethods;
+	public String commandStatus;
+	private Map<String, Vehicleevent> previousVehicleevent = new HashMap<String, Vehicleevent>();
+	public static List<String> packetType = new ArrayList<>(Arrays.asList("NR",
+			"TA", "IN", "IF", "BD", "BR", "BL", "HB", "HA", "RT", "DT"));
+
+	@Override
+	protected void handleDevice() {
+
+		LOGGER.info("Entered APMKT_AIS1401A five mins Handle Device:"
+				+ new Date());
+		sktHandlerMethods = new SKTHandlerMethods();
+		DataInputStream clientSocketDis = null;
+		DataOutputStream clientSocketDos = null;
+		DataOutputStream dos = null;
+		try {
+			clientSocket.setSoTimeout(1500000);
+			clientSocketDis = new DataInputStream(clientSocket.getInputStream());
+			clientSocketDos = new DataOutputStream(
+					clientSocket.getOutputStream());
+			APMKT_AIS1401AByteWrapper data = new APMKT_AIS1401AByteWrapper(
+					clientSocketDis, clientSocketDos, this);
+			data.unwrapDataFromStream();
+			String imeiNo = data.getImei();
+			VehicleComposite vehicleComposite = fleetTrackingDeviceListenerBO
+					.getVehicle(imeiNo);
+			if (vehicleComposite == null) {
+				LOGGER.error("APMKT_AIS1401A: handleDevice: Received IMEI No is invalid... returning... "
+						+ imeiNo);
+				return;
+			}
+			super.deviceImei = imeiNo;
+			
+			if (ListenerStarter.apmkt_AIS1401ADeviceHandlerMap.get(deviceImei) == null) {
+				ListenerStarter.apmkt_AIS1401ADeviceHandlerMap.put(deviceImei, this);
+			} else {
+				LOGGER.info("Before APMKT_AIS1401A cleanUpSockets Inside else loop :"
+						+ deviceImei);
+				cleanUpSockets(
+						ListenerStarter.apmkt_AIS1401ADeviceHandlerMap.get(deviceImei)
+								.getClientSocket(),
+						ListenerStarter.apmkt_AIS1401ADeviceHandlerMap.get(deviceImei)
+								.getDis(),
+						ListenerStarter.apmkt_AIS1401ADeviceHandlerMap.get(deviceImei)
+								.getDos());
+				LOGGER.info("After APMKT_AIS1401A cleanUpSockets Inside else loop :"
+						+ deviceImei);
+				ListenerStarter.apmkt_AIS1401ADeviceHandlerMap.put(deviceImei, this);
+			}
+			
+			if (packetType.contains(data.getAPMKT_AIS1401AGpsData()
+					.getPacketType())) {
+				insertService(data, vehicleComposite,
+						fleetTrackingDeviceListenerBO);
+			} else if (data.getAPMKT_AIS1401AHealthData().getPacketType() != null
+					&& data.getAPMKT_AIS1401AHealthData().getPacketType()
+							.equalsIgnoreCase("HEALTH")) {
+				updateHeartBeatInfo(data, vehicleComposite,
+						fleetTrackingDeviceListenerBO);
+			} else if (data.getAPMKT_AIS1401AHealthData().getPacketType() != null
+					&& data.getAPMKT_AIS1401AGpsData().getPacketType()
+							.equalsIgnoreCase("NM")) {
+				prepareAndPersistEmergencyEvents(data, vehicleComposite);
+			}
+
+			while (true) {
+				APMKT_AIS1401AByteWrapper rawData = new APMKT_AIS1401AByteWrapper(
+						clientSocketDis, clientSocketDos, this);
+				rawData.unwrapDataFromStream();
+				if (packetType.contains(rawData.getAPMKT_AIS1401AGpsData()
+						.getPacketType())) {
+					insertService(rawData, vehicleComposite,
+							fleetTrackingDeviceListenerBO);
+				}
+
+				else if (rawData.getAPMKT_AIS1401AHealthData().getPacketType() != null
+						&& rawData.getAPMKT_AIS1401AHealthData()
+								.getPacketType().equalsIgnoreCase("HEALTH")) {
+					updateHeartBeatInfo(rawData, vehicleComposite,
+							fleetTrackingDeviceListenerBO);
+				}
+
+				else if (rawData.getAPMKT_AIS1401AHealthData().getPacketType() != null
+						&& rawData.getAPMKT_AIS1401AGpsData().getPacketType()
+								.equalsIgnoreCase("NM")) {
+					prepareAndPersistEmergencyEvents(rawData, vehicleComposite);
+				}
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		} finally {
+			cleanUpSockets(clientSocket, clientSocketDis, dos);
+		}
+	}
+
+	private void prepareAndPersistEmergencyEvents(
+			APMKT_AIS1401AByteWrapper rawData, VehicleComposite vehicleComposite) {
+		// TODO Auto-generated method stub
+
+	}
+
+	private void updateHeartBeatInfo(APMKT_AIS1401AByteWrapper rawData,
+			VehicleComposite vehicleComposite,
+			FleetTrackingDeviceListenerBORemote entityManagerService) {
+		
+		try {
+			Vehicle vehicle = vehicleComposite.getVehicle();
+			VehicleeventId vehicleeventId = new VehicleeventId();
+			String region = vehicleComposite.getTimeZoneRegion();
+			vehicleeventId.setEventTimeStamp(TimeZoneUtil.getDateTimeZone(
+					new Date(), region));
+			Vehicleevent ve = entityManagerService.getPrevVeConcox(
+					vehicle.getVin(), vehicleeventId.getEventTimeStamp());
+			if (ve != null) {
+
+				String hbd = "hbdAIS140="
+						+ ""
+						+ ";"
+						+ ""
+						+ ";"
+						+ TimeZoneUtil.getTimeINYYYYMMddss(
+								TimeZoneUtil
+										.getDateTimeZone(new Date(), region))
+								.toString()
+						+ ";"
+						+ ""
+						+ ";"
+						+ ""
+						+ ";"
+						+ rawData.getAPMKT_AIS1401AHealthData()
+								.getVoltageLevel() + ";" + "";
+
+				String ioevent = "";
+				for (String ioe : ve.getIoevent().split(",")) {
+					if (ioe.startsWith("hbd")) {
+						break;
+					}
+					if (ioevent.equalsIgnoreCase(""))
+						ioevent += ioe;
+					else
+						ioevent += "," + ioe;
+				}
+				String io = "";
+				if (ioevent.equalsIgnoreCase(""))
+					io += hbd;
+				else
+					io += ioevent + "," + hbd;
+				ve.setIoevent(io);
+				ve.setAi1((int) (Math.round(rawData
+						.getAPMKT_AIS1401AHealthData().getAi1())));
+				ve.setAi2((int) (Math.round(rawData
+						.getAPMKT_AIS1401AHealthData().getAi1())));
+				ve.setDi1(rawData.getAPMKT_AIS1401AHealthData().getDi2());
+				List<Vehicleevent> vehicleEvents = new ArrayList<Vehicleevent>();
+				vehicleEvents.add(ve);
+				fleetTrackingDeviceListenerBO.updateVehicleevent(vehicleEvents,
+						"hbdAIS140", vehicleComposite);
+			}
+			prepareAndPersistHeartBeatEvents(vehicle, rawData, region,
+					vehicleComposite);
+			
+		} catch (Exception e) {
+			LOGGER.error("APMKT_AIS1401A_DeviceProtocolHandler: prepareAndPersistHeartBeatEvents:"
+					+ e);
+		}
+
+	}
+
+	private void prepareAndPersistHeartBeatEvents(Vehicle vehicle,
+			APMKT_AIS1401AByteWrapper rawData, String region,
+			VehicleComposite vehicleComposite) {
+
+		Heartbeatevent heartBeatEvent = new Heartbeatevent();
+		try {
+			HeartbeateventId heartbeateventId = new HeartbeateventId();
+			heartbeateventId.setTimeStamp(TimeZoneUtil.getDateTimeZone(
+					new Date(), region));
+			heartbeateventId.setVin(vehicle.getVin());
+			heartBeatEvent.setEngine(rawData.getAPMKT_AIS1401AHealthData().getDi2() == 1 ? true : false);
+			/*
+			 * heartBeatEvent.setEngine(rawData.getAis140GpsDataV3().getAcc());
+			 * // rawData.getConcoxGpsData().getHbdacc()); heartBeatEvent
+			 * .setGps(rawData.getAis140GpsDataV3().getGpsTracking());
+			 * 
+			 * heartBeatEvent
+			 * .setGsm(rawData.getAis140GpsDataV3().getGsmSignal() != null ?
+			 * Integer .valueOf(rawData.getAis140GpsDataV3() .getGsmSignal()) :
+			 * null); // rawData.getConcoxGpsData().getGsmSignal());
+			 * heartBeatEvent.setBatteryVoltage(rawData.getAis140GpsDataV3()
+			 * .getVoltageLevel());
+			 * 
+			 * heartBeatEvent.setPowerSupply(rawData.getAis140GpsDataV3()
+			 * .getCharge());
+			 */
+			heartBeatEvent.setBatteryVoltage(rawData
+					.getAPMKT_AIS1401AHealthData().getVoltageLevel());
+			heartBeatEvent.setId(heartbeateventId);
+			fleetTrackingDeviceListenerBO.persistHeartBeatEvent(heartBeatEvent,
+					vehicleComposite);
+		} catch (Exception e) {
+			LOGGER.error("APMKT_AIS1401A_DeviceProtocolHandler: prepareAndPersistHeartBeatEvents:"
+					+ e);
+		}
+	}
+
+	private void insertService(APMKT_AIS1401AByteWrapper rawData,
+			VehicleComposite vehicleComposite,
+			FleetTrackingDeviceListenerBORemote fleetTrackingDeviceListenerBO) {
+
+		try {
+			Vehicle vehicle = vehicleComposite.getVehicle();
+			Vehicleevent vehicleEvent = prepareVehicleEvents(vehicle, rawData,
+					fleetTrackingDeviceListenerBO, vehicleComposite);
+			if (vehicleEvent == null) {
+				LOGGER.error("Vehicleevent skiped =" + vehicle.getPlateNo());
+				return;
+			}
+			/*
+			 * LOGGER.info(
+			 * "APMKT_AIS1401A_DeviceProtocolHandler: handleDevice: VehicleEvents prepared for vin="
+			 * + vehicleEvent.getId().getVin() + " at " + new Date());
+			 */
+			/** * * For SKT */
+			Position position = getPositionObject(vehicleEvent, rawData);
+			String imeiNo = String.valueOf(position.getDeviceId());
+			/*
+			 * LOGGER.info("APMKT_AIS1401A : Time:: " + position.getTime() +
+			 * " and AIS140V3Imei = " + position.getDeviceId() + " and RFID = "
+			 * + position.getRfid() + " and Company = " +
+			 * vehicleComposite.getVehicle().getCompanyId() + " and Branch = " +
+			 * vehicleComposite.getVehicle().getBranchId());
+			 */
+			if (rawData.getAPMKT_AIS1401AGpsData().getPacketStatus()
+					.equalsIgnoreCase("H")) {
+				fleetTrackingDeviceListenerBO.persistHistoryEvent(vehicleEvent);
+			} else {
+				sktHandlerMethods.persistEventAndGenerateAlert(position,
+						vehicleComposite, imeiNo, "APMKT_AIS1401A",
+						vehicleEvent);
+			}
+
+		} catch (Exception e) {
+			LOGGER.error("APMKT_AIS1401A :: Exception while persisting data :: "
+					+ e);
+		}
+	}
+
+	private Position getPositionObject(Vehicleevent vehicleEvent,
+			APMKT_AIS1401AByteWrapper rawData) {
+		Position position = new Position();
+		position.setDeviceId(Long.valueOf(deviceImei));
+		position.setRfid("1");
+		position.setTime(rawData.getAPMKT_AIS1401AGpsData().getDateTime());
+		position.setLatitude(Double.valueOf(vehicleEvent.getLatitude()));
+		position.setLongitude(Double.valueOf(vehicleEvent.getLongitude()));
+		position.setSpeed(Double.valueOf(vehicleEvent.getSpeed()));
+		return position;
+	}
+
+	private Vehicleevent prepareVehicleEvents(Vehicle vehicle,
+			APMKT_AIS1401AByteWrapper avlData,
+			FleetTrackingDeviceListenerBORemote entityManagerService,
+			VehicleComposite vehicleComposite) {
+
+		Vehicleevent vehicleEvent = new Vehicleevent();
+		try {
+			JSONObject deviceParameters = new JSONObject();
+			String region = vehicleComposite.getTimeZoneRegion();
+			Date eventTime = TimeZoneUtil.getDateTimeZone(avlData
+					.getAPMKT_AIS1401AGpsData().getDateTime(), region);
+			Date currentTime = TimeZoneUtil.getDateTimeZone(new Date(), region);
+			VehicleeventId vehicleeventId = new VehicleeventId();
+			vehicleeventId.setEventTimeStamp(eventTime);
+			LOGGER.info("APMKT_AIS1401A EventTimeStamp :"
+					+ vehicleeventId.getEventTimeStamp() + " vin :"
+					+ vehicleComposite.getVehicle().getVin());
+			vehicleEvent.setServerTimeStamp(currentTime);
+
+			if (avlData.getAPMKT_AIS1401AGpsData().getSpeed() > 0
+					&& avlData.getAPMKT_AIS1401AGpsData().getSpeed() < 10
+					&& !avlData.getAPMKT_AIS1401AGpsData().getAcc()) {
+				LOGGER.error("APMKT_AIS1401A: vehicleEvent skiped for Towed has less than 10km :: Speed : "
+						+ avlData.getAPMKT_AIS1401AGpsData().getSpeed()
+						+ " :: Engine "
+						+ avlData.getAPMKT_AIS1401AGpsData().getAcc());
+				return null;
+			}
+
+			long diffDays = Math.abs((eventTime.getTime() - currentTime
+					.getTime()) / 43200000);
+			if (diffDays >= 1) {
+				LOGGER.error("APMKT_AIS1401A: EventTimeStamp is Not In CurrentDay"
+						+ eventTime);
+				return null;
+			}
+			double latitude = avlData.getAPMKT_AIS1401AGpsData().getLatitude();
+			latitude = (double) Math.round(latitude * 10000) / 10000;
+			double longitude = avlData.getAPMKT_AIS1401AGpsData()
+					.getLongitude();
+			longitude = (double) Math.round(longitude * 10000) / 10000;
+			LOGGER.error("APMKT_AIS1401A: latitude and longitude:" + latitude
+					+ " , " + longitude);
+			if (latitude == 0 && longitude == 0) {
+				return null;
+			}
+			if (latitude == 0 || longitude == 0) {
+				Vehicleevent preVE = null;
+				if (!previousVehicleevent.containsKey(vehicleComposite
+						.getVehicle().getVin())) {
+					preVE = entityManagerService.getPrevVe(vehicleComposite
+							.getVehicle().getVin());
+					previousVehicleevent.put(vehicleComposite.getVehicle()
+							.getVin(), preVE);
+				} else {
+					preVE = previousVehicleevent.get(vehicleComposite
+							.getVehicle().getVin());
+				}
+				if (preVE != null) {
+					latitude = preVE.getLatitude();
+					longitude = preVE.getLongitude();
+				}
+			}
+			vehicleEvent.setLongitude(longitude);
+			vehicleEvent.setLatitude(latitude);
+			vehicleEvent
+					.setSpeed(avlData.getAPMKT_AIS1401AGpsData().getSpeed());
+			vehicleeventId.setVin(vehicle.getVin());
+			vehicleEvent.setId(vehicleeventId);
+			String ioEvent = "21="
+					+ avlData.getAPMKT_AIS1401AGpsData().getGsmSignal()
+					+ ",69="
+					+ avlData.getAPMKT_AIS1401AGpsData().getSatellites()
+					+ ",30="
+					+ avlData.getAPMKT_AIS1401AGpsData().getBatteryLevel();
+
+			vehicleEvent.setIoevent(ioEvent);
+			vehicleEvent.setEngine(avlData.getAPMKT_AIS1401AGpsData().getAcc());
+			vehicleEvent.setDi1(avlData.getAPMKT_AIS1401AGpsData().getAcc() ? 1
+					: 0);
+			vehicleEvent.setBattery(avlData.getAPMKT_AIS1401AGpsData()
+					.getMainInputVoltage());
+			deviceParameters.put("gps", avlData.getAPMKT_AIS1401AGpsData()
+					.getGpsTracking());
+			deviceParameters.put("gsm", avlData.getAPMKT_AIS1401AGpsData()
+					.getGsmSignal());
+			deviceParameters.put("powerSupply", avlData
+					.getAPMKT_AIS1401AGpsData().getCharge());
+			deviceParameters.put("engine", avlData.getAPMKT_AIS1401AGpsData()
+					.getAcc());
+			deviceParameters.put("batteryVoltage", avlData
+					.getAPMKT_AIS1401AGpsData().getVoltageLevel());
+			deviceParameters.put("packetType", avlData
+					.getAPMKT_AIS1401AGpsData().getPacketType());
+
+			vehicleEvent.setTags(deviceParameters.toString());
+			String towedOdometer;
+			if (!SKTHandlerMethods.odometerForTowed.isEmpty()
+					&& SKTHandlerMethods.odometerForTowed.get(vehicle
+							.getCompanyId()) != null) {
+				towedOdometer = SKTHandlerMethods.odometerForTowed.get(vehicle
+						.getCompanyId());
+			} else {
+				towedOdometer = entityManagerService.getCompanySettings(
+						"towedCalc", vehicle.getCompanyId());
+				SKTHandlerMethods.odometerForTowed.put(vehicle.getCompanyId(),
+						towedOdometer);
+			}
+			Vehicleevent ve = entityManagerService.getPrevVeConcox(
+					vehicle.getVin(), vehicleeventId.getEventTimeStamp());
+			if (towedOdometer.equalsIgnoreCase("1")) {
+				if (vehicleEvent.getSpeed() != 0) {
+					float odometer = distanceMatrix(ve.getLatitude(),
+							ve.getLongitude(), vehicleEvent.getLatitude(),
+							vehicleEvent.getLongitude());
+					vehicleEvent.setOdometer((long) odometer);
+				}
+			} else {
+				if (ve != null && vehicleEvent.getEngine()
+						&& vehicleEvent.getSpeed() != 0) {
+					float odometer = distanceMatrix(ve.getLatitude(),
+							ve.getLongitude(), vehicleEvent.getLatitude(),
+							vehicleEvent.getLongitude());
+					vehicleEvent.setOdometer((long) odometer);
+				}
+			}
+			if (ve != null
+					&& (!ve.getEngine() || ve.getSpeed() == 0)
+					&& (!vehicleEvent.getEngine() || vehicleEvent.getSpeed() == 0)) {
+				vehicleEvent.setDirection(ve.getDirection());
+			} else {
+				vehicleEvent.setDirection(avlData.getAPMKT_AIS1401AGpsData()
+						.getDirection());
+			}
+
+			if (latitude != 0 && longitude != 0) {
+				previousVehicleevent.put(
+						vehicleComposite.getVehicle().getVin(), vehicleEvent);
+			}
+
+		} catch (Exception e) {
+			LOGGER.error("APMKT_AIS1401A:PreparevehicleEvents:" + e);
+			e.printStackTrace();
+		}
+		return vehicleEvent;
+
+	}
+
+	public float distanceMatrix(double lat1, double lng1, double lat2,
+			double lng2) {
+		try {
+			URL url1 = new URL(
+					"http://maps.googleapis.com/maps/api/distancematrix/json?origins="
+							+ lat1 + "," + lng1 + "&destinations=" + lat2 + ","
+							+ lng2
+							+ "&mode=driving&language=en-EN&sensor=false");
+			URLConnection con = url1.openConnection();
+			InputStream in = con.getInputStream();
+			String encoding = "UTF-8";
+			String statusText = IOUtils.toString(in, encoding);
+			if (statusText == null || !statusText.contains("distance")) {
+				return distance(lat1, lng1, lat2, lng2);
+			}
+			JSONObject json = new JSONObject(statusText);
+			String rows = json.getString("rows");
+			JSONObject rowObject = new JSONObject(rows.substring(1,
+					rows.length() - 1));
+			String elements = rowObject.getString("elements");
+			JSONObject elementsObject = new JSONObject(elements.substring(1,
+					elements.length() - 1));
+			String distance = elementsObject.getString("distance");
+			JSONObject distanceObject = new JSONObject(distance);
+			return Float.valueOf(distanceObject.getString("value"));
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return distance(lat1, lng1, lat2, lng2);
+	}
+
+	public float distance(double lat1, double lng1, double lat2, double lng2) {
+		double earthRadius = 6371000; // meters
+		double dLat = Math.toRadians(lat2 - lat1);
+		double dLng = Math.toRadians(lng2 - lng1);
+		double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+				+ Math.cos(Math.toRadians(lat1))
+				* Math.cos(Math.toRadians(lat2)) * Math.sin(dLng / 2)
+				* Math.sin(dLng / 2);
+		double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+		float dist = (float) (earthRadius * c);
+		return dist;
+	}
+
+	public String sendCommand(String command, String imeiNo, Socket clientSocket) {
+
+		this.commandStatus = null;
+		String result = null;
+		try {
+			VehicleComposite vehicleComposite = fleetTrackingDeviceListenerBO
+					.getVehicle(imeiNo);
+			DataOutputStream out = new DataOutputStream(
+					clientSocket.getOutputStream());
+			if (command.contains("^INO")) {
+				out.write(command.getBytes());
+			} else if (command.equalsIgnoreCase("cutOffEngine")) {
+				command = "^RL1,ON,#";
+				out.write(command.getBytes());
+				int i = 0;
+				while (i < 120) {
+					if (this.commandStatus.equalsIgnoreCase("cutOffEngine")) {
+						fleetTrackingDeviceListenerBO.updateLockStatus(
+								vehicleComposite.getVehicle(), 1);
+						this.commandStatus = null;
+						break;
+					} else {
+						Thread.sleep(1000);
+					}
+					i++;
+				}
+			} else if (command.equalsIgnoreCase("restoreEngine")) {
+				command = "^RL1,OFF,#";
+				out.write(command.getBytes());
+				int i = 0;
+				while (i < 120) {
+					if (this.commandStatus.equalsIgnoreCase("restoreEngine")) {
+						fleetTrackingDeviceListenerBO.updateLockStatus(
+								vehicleComposite.getVehicle(), 0);
+						this.commandStatus = null;
+						break;
+					} else {
+						Thread.sleep(1000);
+					}
+					i++;
+				}
+			} else if (command.equalsIgnoreCase("cutOffAc")) {
+				command = "^RL2,ON,#";
+				out.write(command.getBytes());
+			} else if (command.equalsIgnoreCase("restoreAc")) {
+				command = "^RL2,OFF,#";
+				out.write(command.getBytes());
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return result;
+	}
+}

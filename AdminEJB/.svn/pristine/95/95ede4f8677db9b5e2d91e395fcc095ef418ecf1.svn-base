@@ -1,0 +1,242 @@
+package com.eiw.device.handler;
+
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.net.Socket;
+import java.net.SocketTimeoutException;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+
+import org.jboss.logging.Logger;
+import org.json.JSONObject;
+
+import com.eiw.device.android.AndroidDecoder;
+import com.eiw.device.android.Position;
+import com.eiw.device.ejb.FleetTrackingDeviceListenerBORemote;
+import com.eiw.device.ejb.VehicleComposite;
+import com.eiw.server.TimeZoneUtil;
+import com.eiw.server.bo.BOFactory;
+import com.eiw.server.fleettrackingpu.Fingerprintevent;
+import com.eiw.server.fleettrackingpu.FingerprinteventId;
+import com.eiw.server.fleettrackingpu.Vehicle;
+import com.eiw.server.fleettrackingpu.Vehicleevent;
+import com.eiw.server.fleettrackingpu.VehicleeventId;
+
+public class AndroidDeviceHandler extends DeviceHandler {
+	public static final Logger LOGGER = Logger.getLogger("listener");
+
+	FleetTrackingDeviceListenerBORemote fleetTrackingDeviceListenerBO = BOFactory
+			.getFleetTrackingDeviceListenerBORemote();
+	public static String commandStatus;
+	public static String rawData;
+	JSONObject obj = new JSONObject();
+	DataInputStream clientSocketDis = null;
+	DataOutputStream clientSocketDos = null;
+
+	public AndroidDeviceHandler(String data) {
+		rawData = data;
+	}
+
+	public AndroidDeviceHandler() {
+	}
+
+	protected void handleDevice() {
+
+		LOGGER.info("Entered Andriod Handle Device:" + new Date());
+
+		try {
+			obj.put("type", 2);
+			// clientSocket.setSoTimeout(1500000);
+			clientSocketDis = new DataInputStream(clientSocket.getInputStream());
+			clientSocketDos = new DataOutputStream(
+					clientSocket.getOutputStream());
+
+			AndroidDecoder decoder = new AndroidDecoder(clientSocketDis,
+					clientSocketDos);
+			Position position = decoder.decode();
+
+			String imeiNo = String.valueOf(position.getDeviceId());
+			VehicleComposite vehicleComposite = fleetTrackingDeviceListenerBO
+					.getVehicle(imeiNo);
+
+			if (vehicleComposite == null) {
+				LOGGER.error("AndroidDeviceHandler: handleDevice: Received IMEI No is invalid... returning... "
+						+ imeiNo);
+				return;
+			} else {
+				insertService(position, vehicleComposite,
+						fleetTrackingDeviceListenerBO, clientSocketDos);
+				super.deviceImei = imeiNo;
+				while (true) {
+					insertService(decoder.decode(), vehicleComposite,
+							fleetTrackingDeviceListenerBO, clientSocketDos);
+				}
+			}
+		} catch (SocketTimeoutException e) {
+			LOGGER.error("SocketTimeoutExceptiontion while receiving the Message "
+					+ e);
+		} catch (Exception e) {
+			LOGGER.error("Exception while receiving the Message " + e);
+		} finally {
+			cleanUpSockets(clientSocket, clientSocketDis, clientSocketDos);
+			LOGGER.info("DeviceCommunicatorThread:DeviceCommunicator Completed");
+		}
+	}
+
+	private int insertService(Position position,
+			VehicleComposite vehicleComposite,
+			FleetTrackingDeviceListenerBORemote fleetTrackingDeviceListenerBO,
+			DataOutputStream dos) {
+		int response = 1;
+		try {
+			Vehicle vehicle = vehicleComposite.getVehicle();
+			List<Vehicleevent> vehicleEvents = prepareVehicleEvents(vehicle,
+					position, fleetTrackingDeviceListenerBO);
+			LOGGER.info("AndroidDeviceHandler: handleDevice: VehicleEvents prepared for vin="
+					+ ((Vehicleevent) vehicleEvents.get(0)).getId().getVin()
+					+ " at " + new Date());
+			response = fleetTrackingDeviceListenerBO.persistDeviceData(
+					vehicleEvents, vehicleComposite);
+
+			if (vehicle.getIconUrl().equalsIgnoreCase("supervisor")) {
+				fleetTrackingDeviceListenerBO.updateSupervisor(
+						vehicle.getVin(), position);
+			} else if (vehicle.getIconUrl().equalsIgnoreCase("workshop")) {
+				fleetTrackingDeviceListenerBO.updateWorkshop(vehicle.getVin(),
+						position);
+			}
+
+			fleetTrackingDeviceListenerBO.liveTrackingDataPusher(
+					vehicleEvents.get(0), vehicleComposite);
+		} catch (Exception e) {
+			response = 1;
+			LOGGER.error("Exception while persisting data :: " + e);
+			e.printStackTrace();
+		} finally {
+			try {
+				obj.put("status", response);
+				System.out.println(obj.toString());
+				dos.writeUTF(obj.toString() + "\n");
+			} catch (Exception e) {
+				LOGGER.error("Exception at Send Response");
+				e.printStackTrace();
+			}
+		}
+
+		return response;
+	}
+
+	public int callFromServlet(String data) {
+		int response = 1;
+		try {
+			AndroidDecoder decoder = new AndroidDecoder(data);
+			this.rawData = data;
+			Position position = decoder.getPosition(data);
+
+			String imeiNo = position.getDeviceId();
+			VehicleComposite vehicleComposite = fleetTrackingDeviceListenerBO
+					.getVehicle(imeiNo);
+
+			if (vehicleComposite == null) {
+				LOGGER.error("AndroidDeviceHandler: handleDevice: Received IMEI No is invalid... returning... "
+						+ imeiNo);
+				return 3;
+			}
+			LOGGER.error("IMEI no:" + imeiNo + " speed:" + position.getSpeed());
+			return insertService(position, vehicleComposite,
+					fleetTrackingDeviceListenerBO, clientSocketDos);
+		} catch (Exception e) {
+			response = 1;
+			e.printStackTrace();
+		}
+		return response;
+	}
+
+	private List<Vehicleevent> prepareVehicleEvents(Vehicle vehicle,
+			Position position,
+			FleetTrackingDeviceListenerBORemote entityManagerService) {
+		List<Vehicleevent> vehicleEvents = new ArrayList();
+		try {
+			String region = entityManagerService.getTimeZoneRegion(vehicle
+					.getVin());
+			Vehicleevent vehicleEvent = new Vehicleevent();
+
+			VehicleeventId vehicleeventId = new VehicleeventId();
+			vehicleeventId.setEventTimeStamp(TimeZoneUtil.getDateTimeZone(
+					position.getTime(), region));
+			vehicleEvent.setServerTimeStamp(TimeZoneUtil.getDateInTimeZone());
+			vehicleEvent.setLongitude(Float.valueOf(position.getLongitude()
+					.floatValue()));
+			vehicleEvent.setLatitude(Float.valueOf(position.getLatitude()
+					.floatValue()));
+			vehicleeventId.setVin(vehicle.getVin());
+			vehicleEvent.setId(vehicleeventId);
+			vehicleEvent.setBattery(position.getBattery());
+			vehicleEvent.setSpeed(position.getSpeed());
+			vehicleEvent.setEngine(position.getEngine());
+			vehicleEvent.setIoevent(position.getIoData());
+			LOGGER.error("Success for prepare Event");
+			vehicleEvents.add(vehicleEvent);
+		} catch (Exception e) {
+			LOGGER.error("AndroidDeviceHandler: PreparevehicleEvents:"
+					+ e.getMessage());
+			e.printStackTrace();
+		}
+		return vehicleEvents;
+	}
+
+	public float distance(float lat1, float lng1, float lat2, float lng2) {
+		double earthRadius = 6371000.0D;
+		double dLat = Math.toRadians(lat2 - lat1);
+		double dLng = Math.toRadians(lng2 - lng1);
+		double a = Math.sin(dLat / 2.0D) * Math.sin(dLat / 2.0D)
+				+ Math.cos(Math.toRadians(lat1))
+				* Math.cos(Math.toRadians(lat2)) * Math.sin(dLng / 2.0D)
+				* Math.sin(dLng / 2.0D);
+		double c = 2.0D * Math.atan2(Math.sqrt(a), Math.sqrt(1.0D - a));
+		float dist = (float) (earthRadius * c);
+
+		return dist;
+	}
+
+	public String sendCommand(String command, Socket concoxDeviceSocket) {
+		String result = null;
+		try {
+			DataOutputStream out = new DataOutputStream(
+					concoxDeviceSocket.getOutputStream());
+			if (!command.equalsIgnoreCase("cutOffEngine")) {
+				command.equalsIgnoreCase("restoreEngine");
+			}
+		} catch (Exception e) {
+			LOGGER.error("SendCommand : " + e);
+		}
+		return result;
+	}
+
+	private Fingerprintevent prepareFingerPrintEvents(Position position,
+			Vehicle vehicle, String region) {
+		LOGGER.info("Region Android :" + region);
+		Fingerprintevent fingerPrintEvent = new Fingerprintevent();
+		try {
+			fingerPrintEvent.setLatitude(Float.valueOf(position.getLatitude()
+					.floatValue()));
+			fingerPrintEvent.setLongitude(Float.valueOf(position.getLongitude()
+					.floatValue()));
+			fingerPrintEvent.setServerTimeStamp(TimeZoneUtil
+					.getDateInTimeZone());
+			fingerPrintEvent.setFingerPrintStatus(position.getFingerPrint());
+			FingerprinteventId fingerPrintEventId = new FingerprinteventId();
+			fingerPrintEventId.setVin(vehicle.getVin());
+			fingerPrintEventId.setEventTimeStamp(TimeZoneUtil.getDateTimeZone(
+					position.getTime(), region));
+			fingerPrintEvent.setId(fingerPrintEventId);
+			return fingerPrintEvent;
+		} catch (Exception e) {
+			LOGGER.error("AndroidDeviceHandler :: prepareFingerPrintEvents: Exception"
+					+ e.getMessage());
+			e.printStackTrace();
+		}
+		return null;
+	}
+}

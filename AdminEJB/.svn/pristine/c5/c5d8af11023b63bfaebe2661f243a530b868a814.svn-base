@@ -1,0 +1,42 @@
+package com.eiw.cron.report;
+
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.List;
+
+import org.jboss.logging.Logger;
+import org.quartz.Job;
+import org.quartz.JobExecutionContext;
+import org.quartz.JobExecutionException;
+
+import com.eiw.client.dto.ReportData;
+import com.eiw.server.bo.BOFactory;
+
+public class SummaryDayReport implements Job {
+
+	private static final Logger LOGGER = Logger.getLogger("report");
+	SimpleDateFormat sdfDate = new SimpleDateFormat("yyyy-MM-dd");
+
+	public void execute(JobExecutionContext arg0) throws JobExecutionException {
+		LOGGER.info("SummaryDayReport::Entering CronJobKSA Class");
+		SummaryEJBRemote summaryEJB = BOFactory.getSummaryEJBRemote();
+		List<Object[]> listVehicleevents = summaryEJB
+				.vehicleList("Asia/Riyadh");
+		for (int i = 0; i < listVehicleevents.size(); i++) {
+			Object[] obj = (Object[]) listVehicleevents.get(i);
+			String vin = (String) obj[1];
+			Date eventDate = (Date) obj[0];
+			long totOdometerPerDay = summaryEJB.getOdometerPerDay(vin,
+					sdfDate.format(eventDate));
+			long prevOdometer = summaryEJB.getPreviousOdometerValue(vin);
+			List<ReportData> reportDatasDay = summaryEJB.getSummaryDayReport(
+					vin, sdfDate.format(eventDate));
+			summaryEJB.insertVehicleDaySummary(vin, sdfDate.format(eventDate),
+					reportDatasDay, totOdometerPerDay);
+			summaryEJB.insertVehicleHasOdometer(vin, totOdometerPerDay,
+					prevOdometer);
+		}
+		LOGGER.info("SummaryDayReport::Exiting CronJobKSA Class");
+	}
+
+}

@@ -1,0 +1,173 @@
+package com.eiw.device.handler;
+
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.EOFException;
+import java.net.SocketTimeoutException;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import org.jboss.logging.Logger;
+
+import com.eiw.device.ejb.FleetTrackingDeviceListenerBORemote;
+import com.eiw.device.ejb.VehicleComposite;
+import com.eiw.device.handler.method.SKTHandlerMethods;
+import com.eiw.device.meitrack.MeiTrackProtocolDecoder;
+import com.eiw.device.meitrack.Position;
+import com.eiw.server.bo.BOFactory;
+import com.eiw.server.fleettrackingpu.Freeformgeo;
+import com.eiw.server.fleettrackingpu.Vehicleevent;
+import com.eiw.server.studenttrackingpu.Routetrip;
+import com.skt.alerts.SKTAlertsEJBremote;
+import com.skt.client.dto.VehicleTripTimeDto;
+
+public class MeiTrackDeviceHandler extends DeviceHandler {
+
+	private static final Logger LOGGER = Logger.getLogger("listener");
+	public static Map<String, String> prevOdometerMap = new HashMap<String, String>();
+	public static Map<String, Vehicleevent> prevVehicleeventMap = new HashMap<String, Vehicleevent>();
+	public static Map<String, Map<String, Boolean>> prevGeoMap = new HashMap<String, Map<String, Boolean>>();
+	public static Map<String, String> alerttypesDescriptionMap = null;
+	public static Map<String, Routetrip> currentORupcomingRTMap = new HashMap<String, Routetrip>();
+	public static Map<String, VehicleTripTimeDto> vehicleTripTimeMap = new HashMap<String, VehicleTripTimeDto>();
+	public static Map<String, Integer> stopCountMap = new HashMap<String, Integer>();
+	public static Map<String, List<Freeformgeo>> schoolGeozoneMap = new HashMap<String, List<Freeformgeo>>();
+	public static FleetTrackingDeviceListenerBORemote fleetTrackingDeviceListenerBO = BOFactory
+			.getFleetTrackingDeviceListenerBORemote();
+	public static String isSKT = null;
+	public static Map<String, Boolean> isNextDay = new HashMap<String, Boolean>();
+	private SKTHandlerMethods sktHandlHanlerMethods = null;
+	public static SKTAlertsEJBremote sktAlertsEJBRemote = BOFactory
+			.getStudentalertEJBremote();
+
+	public MeiTrackDeviceHandler() {
+		setSktHandlHanlerMethods(new SKTHandlerMethods());
+	}
+
+	@Override
+	protected void handleDevice() {
+		LOGGER.info("SKTLog:MeiTrackDeviceHandler Entered MeiTrack five mins Handle Device:"
+				+ new Date());
+
+		DataInputStream clientSocketDis = null;
+		DataOutputStream dos = null;
+		try {
+			clientSocket.setSoTimeout(1500000);
+			clientSocketDis = new DataInputStream(clientSocket.getInputStream());
+			MeiTrackProtocolDecoder meiTrackProtocolDecoder = new MeiTrackProtocolDecoder();
+			Position position = meiTrackProtocolDecoder.decode(clientSocketDis);
+			/* Obtaining IMEI NO. from rawData */
+			String imeiNo = String.valueOf(position.getDeviceId1());
+			if (imeiNo.length() < 15 && imeiNo.startsWith("1")) {
+				imeiNo = "0" + imeiNo;
+			}
+
+			VehicleComposite vehicleComposite = fleetTrackingDeviceListenerBO
+					.getVehicle(imeiNo);
+
+			LOGGER.info("SKTLog:MeiTrackDeviceHandler (1):Time::: "
+					+ position.getTime() + " and MEITRACKimei = "
+					+ position.getDeviceId1() + " and RFID = "
+					+ position.getRfid() + " and Company = "
+					+ vehicleComposite.getVehicle().getCompanyId()
+					+ " and Branch = "
+					+ vehicleComposite.getVehicle().getBranchId());
+
+			super.deviceImei = imeiNo;
+			prepareStaticElements(vehicleComposite);
+			getSktHandlHanlerMethods().persistEventAndGenerateAlert(position,
+					vehicleComposite, imeiNo, "meitrack", null);
+			// insertService(vehicleComposite, position, imeiNo);
+			while (true) {
+				LOGGER.info("SKTLog:MeiTrackDeviceHandler :: Entered while loop");
+				try {
+					position = meiTrackProtocolDecoder.decode(clientSocketDis);
+
+					LOGGER.info("SKTLog:MeiTrackDeviceHandler (2):Time::: "
+							+ position.getTime() + " and MEITRACKimei = "
+							+ position.getDeviceId1() + " and RFID = "
+							+ position.getRfid() + " and Company = "
+							+ vehicleComposite.getVehicle().getCompanyId()
+							+ " and Branch = "
+							+ vehicleComposite.getVehicle().getBranchId());
+
+					getSktHandlHanlerMethods().persistEventAndGenerateAlert(
+							position, vehicleComposite, imeiNo, "meitrack",
+							null);
+
+				} catch (EOFException eof) {
+					LOGGER.error("SKTLog:MeiTrackDeviceHandler :EOFException when decode clientSocketDis "
+							+ eof);
+					eof.printStackTrace();
+					break;
+				}
+			}
+		} catch (SocketTimeoutException e) {
+			LOGGER.error("SKTLog:MeiTrackDeviceHandler :SocketTimeoutExceptiontion while receiving the Message "
+					+ e);
+		} catch (Exception e) {
+			LOGGER.error("SKTLog:MeiTrackDeviceHandler :Exception while receiving the Message "
+					+ e.getMessage());
+			e.printStackTrace();
+		} finally {
+			cleanUpSockets(clientSocket, clientSocketDis, dos);
+			LOGGER.info("SKTLog:MeiTrackDeviceHandler DeviceCommunicatorThread:DeviceCommunicator Completed");
+			System.gc();
+		}
+	}
+
+	public void prepareStaticElements(VehicleComposite vehicleComposite) {
+		getSKTalerttypesMap();
+		// getSchoolGeoZone(vehicleComposite.getVehicle().getCompanyId());
+	}
+
+	public static Map<String, String> getSKTalerttypesMap() {
+		if (alerttypesDescriptionMap == null)
+			alerttypesDescriptionMap = sktAlertsEJBRemote.getSKTalerttypesMap();
+		return alerttypesDescriptionMap;
+	}
+
+	public static List<Freeformgeo> getSchoolGeoZone(String companyId) {
+		List<Freeformgeo> schoolGeozone = schoolGeozoneMap.get(companyId);
+		if (schoolGeozone == null) {
+			schoolGeozone = sktAlertsEJBRemote.getSchoolGeoZone(companyId);
+			schoolGeozoneMap.put(companyId, schoolGeozone);
+		}
+		return schoolGeozone;
+	}
+
+	public static Vehicleevent getPrevVE(String vin) {
+
+		if (prevVehicleeventMap.get(vin) == null) {
+			Vehicleevent ve = fleetTrackingDeviceListenerBO.getPrevVe(vin);
+			prevVehicleeventMap.put(vin, ve);
+		}
+		return prevVehicleeventMap.get(vin);
+	}
+
+	public static Vehicleevent getPrevVEForMovement(String vin) {
+		prevVehicleeventMap.remove(vin);
+		Vehicleevent ve = fleetTrackingDeviceListenerBO.getPrevVe(vin);
+		prevVehicleeventMap.put(vin, ve);
+		return prevVehicleeventMap.get(vin);
+	}
+
+	public static String getPrevOdometer(String vin, String imei) {
+		if (prevOdometerMap.get(vin) == null) {
+			String previousOdometer = fleetTrackingDeviceListenerBO
+					.previousOdometer(vin, imei);
+			prevOdometerMap.put(vin, previousOdometer);
+		}
+		return prevOdometerMap.get(vin);
+	}
+
+	public SKTHandlerMethods getSktHandlHanlerMethods() {
+		return sktHandlHanlerMethods;
+	}
+
+	public void setSktHandlHanlerMethods(SKTHandlerMethods sktHandlHanlerMethods) {
+		this.sktHandlHanlerMethods = sktHandlHanlerMethods;
+	}
+}

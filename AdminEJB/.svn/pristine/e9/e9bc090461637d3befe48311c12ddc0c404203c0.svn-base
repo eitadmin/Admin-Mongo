@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE hibernate-configuration PUBLIC
+		"-//Hibernate/Hibernate Configuration DTD 3.0//EN"
+		"http://hibernate.sourceforge.net/hibernate-configuration-3.0.dtd">
+<hibernate-configuration>
+	<session-factory>
+		<property name="hibernate.dialect">org.hibernate.dialect.MySQLInnoDBDialect</property>
+		<property name="hibernate.show_sql">true</property>
+		<property name="cache.use_second_level_cache">true</property>
+		<property name="hibernate.cache.provider_class">
+			org.hibernate.cache.internal.HashtableCacheProvider
+		</property>
+		<property name="cache.use_query_cache">true</property>
+		<property name="hibernate.transaction.auto_close_session">false</property>
+	</session-factory>
+</hibernate-configuration>

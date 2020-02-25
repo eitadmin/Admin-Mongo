@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<module rename-to='ltmsweb'>
+	<!-- Inherit the core Web Toolkit stuff. -->
+	<inherits name='com.google.gwt.user.User' />
+	<inherits name="com.google.maps.gwt.GoogleMaps" />
+	<inherits name="com.extjs.gxt.ui.GXT" />
+	<inherits name='com.extjs.gxt.charts.Chart' />
+	<inherits name='com.extjs.gxt.themes.Themes' />
+	<inherits name='com.allen_sauer.gwt.voices.gwt-voices' />
+	<inherits name="com.eit.dcframework.DCFramework" />
+<!-- 	<set-property name="user.agent" value="safari" /> -->
+
+	<inherits name='com.google.gwt.user.theme.standard.Standard' />
+	<entry-point class='com.eiw.client.dashboard.LoginDashboardModule' />
+</module>

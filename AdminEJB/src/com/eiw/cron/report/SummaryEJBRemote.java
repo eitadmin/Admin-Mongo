@@ -1,0 +1,122 @@
+package com.eiw.cron.report;
+
+import java.util.List;
+
+import javax.ejb.Local;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import com.eiw.client.dto.ReportData;
+import com.eiw.server.companyadminpu.Provider;
+import com.eiw.server.fleettrackingpu.Alertconfig;
+import com.eiw.server.fleettrackingpu.Vehiclealerts;
+import com.eiw.server.fleettrackingpu.Vehicleevent;
+
+@Local
+public interface SummaryEJBRemote {
+
+	List<Object[]> vehicleList(String timeZone);
+
+	List<ReportData> getSummaryDayReport(String vin, String eventDate);
+
+	long getOdometerPerDay(String vin, String eventDate);
+
+	int insertVehicleDaySummary(String vin, String eventDate,
+			List<ReportData> reportDatas, long totOdometer);
+
+	void insertVehicleHasOdometer(String vin, long totalOdometer,
+			long previousOdometer, int engineHoursPerDay, String prevEngineHour);
+
+	Object[] getPreviousOdometerValue(String vin);
+
+	List<Object> employeeList(String timeZone);
+
+	List<ReportData> getEmployeeSummaryDayReport(String employeeId,
+			String eventDate);
+
+	void insertEmployeeDaySummary(String employeeId, String eventDate,
+			List<ReportData> employeeDatasDay);
+
+	List<Object[]> vehicleList(String timeZone, String mode);
+
+	List<Vehicleevent> getVehicleEvents(String vin, String eventDate);
+
+	String getNewVehicleSumaryReportDay(String vin, String format);
+
+	void insertNewVehicleDaySummary(String vin, String format,
+			String newreportDatasDay);
+
+	String getNewVehicleSumaryStatusReportDay(String vin, String perdate);
+
+	void insertNewVehicleSummaryStatus(String vin, String format,
+			String newreportDatasDay);
+
+	String getRemoveFromNotransmissionOverride(String Date);
+
+	String sendReportMail(JSONArray data, String title, String emails,
+			String CompId, JSONArray format, String reportType, String fileName);
+
+	List<Object[]> getsummaryVins(String compID);
+
+	// String getsummaryMail(String mailID);
+
+	List<Object[]> getcompID(String string);
+
+	JSONArray getConsolidateSummaryReport(String vin, String userId);
+
+	String sendReportMailMultifiles(JSONArray finalarray, String string,
+			String sumMail, String compID, JSONArray format, String plateno);
+
+	String SendMail(String companyId, String Filepath, String sendermail);
+
+	String converToZip(String inputZipFilePath, String outoutfilepath);
+
+	String getPreferencesData(String key, String compID);
+
+	JSONArray getConsolidateSummaryReportTotal(String vin, String userId);
+
+	String generateNoTransAlert(String timeZone, Alertconfig alertConfig,
+			String vin, String plateNo, String lstTransDate, String latlang,
+			Provider providerNoTrans, String OperatorName, String serverTime,
+			String heartBeatEvent);
+
+	List<Alertconfig> getAlertConfigNoTransmission(String vin);
+
+	String getOperatorName(String vin);
+
+	List<Object[]> getnoTransAlertVins();
+
+	List<Object> vehicleListVin();
+
+	int getNoTransmissionAlertCnt(String vin, String curDate);
+
+	boolean isEmailValidOrNot(String mail);
+
+	boolean insertVehicleAlert(Vehiclealerts vehiclealerts);
+
+	String getnoTransHeartBeatEvent(String vin);
+
+	String getConsolidateSummaryByDayReport(String vin, String eventDate);
+
+	void insertConsolidateSummaryByDayReport(String vin, String eventDate,
+			String reportDatasByDay);
+
+	String getConsolidateSummaryByDayReportTotal(String string, String uId,
+			String fromDate, String todate);
+
+	List<String> getdataMigrationVins();
+
+	String getLatestDataandMigrate(String migrationVin);
+
+	String getSpeedSumaryReportDay(String vin, String eventDate);
+
+	void insertOverSpeedSummary(String vin, String eventDate,
+			String newreportDatasDay);
+
+	void resetEngineHours();
+
+	List<Object[]> getTodayOdometer(String timeZone);
+
+	JSONObject getSmsReportForSchool(String compID, String currentDate);
+}

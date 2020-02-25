@@ -1,0 +1,421 @@
+package com.eiw.cron;
+
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import javax.ejb.LocalBean;
+import javax.ejb.Stateless;
+import javax.persistence.EntityManager;
+import javax.persistence.PersistenceContext;
+import javax.persistence.Query;
+import javax.websocket.CloseReason;
+import javax.websocket.Session;
+
+import org.jboss.logging.Logger;
+
+import com.eiw.server.TimeZoneUtil;
+import com.eiw.server.companyadminpu.Companysettings;
+import com.eiw.server.fleettrackingpu.Alertconfig;
+
+@LocalBean
+@Stateless
+public class AlertConfigEJB implements AlertConfigEJBRemote {
+	@PersistenceContext(unitName = "ltmsfleettrackingpu")
+	private EntityManager em;
+	private static final Logger LOGGER = Logger.getLogger("alerts");
+	String vin = null;
+	private static final String STR_WOKE_UP = "WOKEUP",
+			STR_AI_RANGE = "_ai_range", STR_AI_LEAKAGE = "_ai_leakage",
+			STR_SEATBELT = "SEATBELT", STR_PANIC = "PANIC";
+
+	public enum enumAlerts {
+		SOS, OVERSPEED, BATTERY, IDLE, TOWED, FATIGUE, OPTIME, GEOSOFT, ONENTER, ONLEAVE, GEOHARD, GEOREST, GEOPREF, GEOZONE, GEOFREE, GEOROAD, GEOLANDMARK, COOLERSENSOR1, COOLERSENSOR2, COOLERSENSOR3, STOP, HARSHBRAKING, DRIFT, ANTITHEFT, TEMPERATURESENSOR1, TEMPERATURESENSOR2, TEMPERATURESENSOR3, TEMPERATURESENSOR4, SEATBELT, PANIC, BTTEMPERATURESENSOR1, BTTEMPERATURESENSOR2, BTTEMPERATURESENSOR3, BTTEMPERATURESENSOR4, BLEBATTERY1, BLEBATTERY2, BLEBATTERY3, BLEBATTERY4, BLEHUMIDITY1, BLEHUMIDITY2, BLEHUMIDITY3, BLEHUMIDITY4, HARSHACCELERATION, DEVICETEMPERD, EVENTALERT
+	}
+
+	List<Alertconfig> listOfAlertconfig = new ArrayList<Alertconfig>();
+	public static Map<String, String> isImeiAvailable = new HashMap<String, String>();
+	public static Map<String, AlertDetails> map = new HashMap<String, AlertDetails>();
+	public static Map<String, Boolean> alertVinMap = new HashMap<String, Boolean>();
+	public static Map<Map<String, String>, String> companySettingMap = new HashMap<Map<String, String>, String>();
+	SimpleDateFormat sdfTime = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+	public static Map<Session, String> alertsSessions = new HashMap<Session, String>();
+	public static Map<String, Integer> secInIgnoremap = new HashMap<String, Integer>();
+	public static Map<String, String> secInIgnoremapforSeatbelt = new HashMap<String, String>();
+	public static Map<String, Long> overSpeedTimeCalc = new HashMap<String, Long>();
+	public static Map<String, Long> seatBeltTimeCalc = new HashMap<String, Long>();
+
+	public static Map<String, Date> alertsLastUpdateTime = new HashMap<String, Date>();
+
+	@Override
+	public void startJobImplemented(String vin) {
+		Date lastUpdatedTime;
+		AlertDetails alertDetails = new AlertDetails();
+		List<Alertconfig> alertconfigs = getAlertConfig(vin);
+		String tempVin = "";
+		if (!map.isEmpty() && vin == null) {
+			map.clear();
+		}
+
+		if (alertconfigs.size() == 0 && vin != null) {
+			map.put(vin, null);
+		}
+
+		if (vin == null && map.isEmpty()) {
+			getLastUpdateTime();
+		}
+
+		for (int i = 0; i < alertconfigs.size(); i++) {
+			String vinNew = alertconfigs.get(i).getId().getVin();
+			String alertType = alertconfigs.get(i).getId().getAlertType();
+			if (!tempVin.equalsIgnoreCase(vinNew)) {
+				alertDetails = new AlertDetails();
+				map.put(vinNew, alertDetails);
+			}
+			// Date lastUpdatedTime = getLastUpdateTime(vinNew, alertType);
+
+			if (alertsLastUpdateTime.containsKey(vinNew + "-" + alertType)) {
+				lastUpdatedTime = alertsLastUpdateTime.get(vinNew + "-"
+						+ alertType);
+			} else {
+				lastUpdatedTime = new Date();
+			}
+
+			LOGGER.warn("Cached-> " + vinNew + "_" + alertType + " = "
+					+ TimeZoneUtil.getTimeINYYYYMMddss(lastUpdatedTime));
+
+			if (alertType.equalsIgnoreCase(enumAlerts.OVERSPEED.name())) {
+				alertDetails.addOverSpeed(alertconfigs.get(i), lastUpdatedTime);
+
+			} else if (alertType.equalsIgnoreCase(enumAlerts.BATTERY.name())) {
+				alertDetails.addBatteryVoltage(alertconfigs.get(i),
+						lastUpdatedTime);
+			} else if (alertType.equalsIgnoreCase(enumAlerts.COOLERSENSOR1
+					.name())) {
+				alertDetails.addCoolerSensor(alertconfigs.get(i),
+						lastUpdatedTime);
+			} else if (alertType.equalsIgnoreCase(enumAlerts.COOLERSENSOR2
+					.name())) {
+				alertDetails.addCoolerSensor(alertconfigs.get(i),
+						lastUpdatedTime);
+			} else if (alertType.equalsIgnoreCase(enumAlerts.COOLERSENSOR3
+					.name())) {
+				alertDetails.addCoolerSensor(alertconfigs.get(i),
+						lastUpdatedTime);
+			} else if (alertType.equalsIgnoreCase(enumAlerts.IDLE.name())) {
+				alertDetails
+						.addEngineIdle(alertconfigs.get(i), lastUpdatedTime);
+			} else if (alertType.equalsIgnoreCase(enumAlerts.TOWED.name())) {
+				alertDetails.addEngineTowed(alertconfigs.get(i),
+						lastUpdatedTime);
+			} else if (alertType.equalsIgnoreCase(enumAlerts.OPTIME.name())) {
+				alertDetails.addOperationTime(alertconfigs.get(i),
+						lastUpdatedTime);
+			} else if (alertType.equalsIgnoreCase(enumAlerts.FATIGUE.name())) {
+				alertDetails.addFatigue(alertconfigs.get(i), lastUpdatedTime);
+			} else if (alertType.equalsIgnoreCase(STR_WOKE_UP)) {
+				alertDetails.addWokeUp(alertconfigs.get(i), lastUpdatedTime);
+			} else if (alertType.equalsIgnoreCase("GSM Signal Strength")) {
+				alertDetails.addGsmSignalStrength(alertconfigs.get(i),
+						lastUpdatedTime);
+			} else if (alertType.endsWith(STR_AI_RANGE)) {
+				alertDetails.addAnalogInputRange(alertconfigs.get(i),
+						lastUpdatedTime);
+			} else if (alertType.endsWith(STR_AI_LEAKAGE)) {
+				alertDetails.addAnalogInputLeakage(alertconfigs.get(i),
+						lastUpdatedTime);
+			} else if (alertType.equalsIgnoreCase("GPSPOWER")) {
+				alertDetails.addGPSPower(alertconfigs.get(i), lastUpdatedTime);
+			} else if (alertType.equalsIgnoreCase("Fuel Tank Fill")) {
+				alertDetails.addFuelTankLid(alertconfigs.get(i),
+						lastUpdatedTime);
+			} else if (alertType.equalsIgnoreCase("ENGINESTATUS")) {
+				alertDetails.addEngineStatusChange(alertconfigs.get(i),
+						lastUpdatedTime);
+			} else if (alertType.equalsIgnoreCase(enumAlerts.STOP.name())) {
+				alertDetails.addStop(alertconfigs.get(i), lastUpdatedTime);
+			} else if (alertType.equalsIgnoreCase("SOS")) {
+				alertDetails.addSOS(alertconfigs.get(i), lastUpdatedTime);
+			} else if (alertType.equalsIgnoreCase("FUELALERT")) {
+				alertDetails
+						.addFuelAlerts(alertconfigs.get(i), lastUpdatedTime);
+			} else if (alertType.equalsIgnoreCase(enumAlerts.HARSHBRAKING
+					.name())) {
+				alertDetails.addHarshBraking(alertconfigs.get(i),
+						lastUpdatedTime);
+			} else if (alertType.equalsIgnoreCase(enumAlerts.DRIFT.name())) {
+				alertDetails.addCorneringCount(alertconfigs.get(i),
+						lastUpdatedTime);
+			} else if (alertType.equalsIgnoreCase(enumAlerts.ANTITHEFT.name())) {
+				alertDetails.addAntiTheftCount(alertconfigs.get(i),
+						lastUpdatedTime);
+			} else if (alertType.equalsIgnoreCase("LowBattery")) {
+				alertDetails
+						.addLowBattery(alertconfigs.get(i), lastUpdatedTime);
+			} else if (alertType.equalsIgnoreCase("PowerCut")) {
+				alertDetails.addPowerCut(alertconfigs.get(i), lastUpdatedTime);
+			} else if (alertType.equalsIgnoreCase("PreventiveMaintenance")) {
+				alertDetails.addPreventiveMaintenanceDue(alertconfigs.get(i),
+						lastUpdatedTime);
+			} else if (alertType.equalsIgnoreCase("ScheduledMaintenance")) {
+				alertDetails.addScheduledMaintenanceDue(alertconfigs.get(i),
+						lastUpdatedTime);
+			} else if (alertType.equalsIgnoreCase("PanelAlarms")) {
+				alertDetails.addPanelAlarms(alertconfigs.get(i),
+						lastUpdatedTime);
+			} else if (alertType.equalsIgnoreCase("Movement")) {
+				alertDetails.addMovement(alertconfigs.get(i), lastUpdatedTime);
+			} else if (alertType.equalsIgnoreCase(enumAlerts.TEMPERATURESENSOR1
+					.name())) {
+				alertDetails.addCoolerSensor(alertconfigs.get(i),
+						lastUpdatedTime);
+			} else if (alertType.equalsIgnoreCase(enumAlerts.TEMPERATURESENSOR2
+					.name())) {
+				alertDetails.addCoolerSensor(alertconfigs.get(i),
+						lastUpdatedTime);
+			} else if (alertType.equalsIgnoreCase(enumAlerts.TEMPERATURESENSOR3
+					.name())) {
+				alertDetails.addCoolerSensor(alertconfigs.get(i),
+						lastUpdatedTime);
+			} else if (alertType.equalsIgnoreCase(enumAlerts.TEMPERATURESENSOR4
+					.name())) {
+				alertDetails.addCoolerSensor(alertconfigs.get(i),
+						lastUpdatedTime);
+			} else if (alertType.equalsIgnoreCase(STR_SEATBELT)) {
+				alertDetails.addSeatBeltAlert(alertconfigs.get(i),
+						lastUpdatedTime);
+			} else if (alertType.equalsIgnoreCase(STR_PANIC)) {
+				alertDetails
+						.addPanicAlert(alertconfigs.get(i), lastUpdatedTime);
+			} else if (alertType
+					.equalsIgnoreCase(enumAlerts.BTTEMPERATURESENSOR1.name())) {
+				alertDetails.addBTCoolerSensor(alertconfigs.get(i),
+						lastUpdatedTime);
+			} else if (alertType
+					.equalsIgnoreCase(enumAlerts.BTTEMPERATURESENSOR2.name())) {
+				alertDetails.addBTCoolerSensor(alertconfigs.get(i),
+						lastUpdatedTime);
+			} else if (alertType
+					.equalsIgnoreCase(enumAlerts.BTTEMPERATURESENSOR3.name())) {
+				alertDetails.addBTCoolerSensor(alertconfigs.get(i),
+						lastUpdatedTime);
+			} else if (alertType
+					.equalsIgnoreCase(enumAlerts.BTTEMPERATURESENSOR4.name())) {
+				alertDetails.addBTCoolerSensor(alertconfigs.get(i),
+						lastUpdatedTime);
+			} else if (alertType
+					.equalsIgnoreCase(enumAlerts.BLEBATTERY1.name())) {
+				alertDetails.addBTCoolerSensor(alertconfigs.get(i),
+						lastUpdatedTime);
+			} else if (alertType
+					.equalsIgnoreCase(enumAlerts.BLEBATTERY2.name())) {
+				alertDetails.addBTCoolerSensor(alertconfigs.get(i),
+						lastUpdatedTime);
+			} else if (alertType
+					.equalsIgnoreCase(enumAlerts.BLEBATTERY3.name())) {
+				alertDetails.addBTCoolerSensor(alertconfigs.get(i),
+						lastUpdatedTime);
+			} else if (alertType
+					.equalsIgnoreCase(enumAlerts.BLEBATTERY4.name())) {
+				alertDetails.addBTCoolerSensor(alertconfigs.get(i),
+						lastUpdatedTime);
+			} else if (alertType.equalsIgnoreCase(enumAlerts.BLEHUMIDITY1
+					.name())) {
+				alertDetails.addBTCoolerSensor(alertconfigs.get(i),
+						lastUpdatedTime);
+			} else if (alertType.equalsIgnoreCase(enumAlerts.BLEHUMIDITY2
+					.name())) {
+				alertDetails.addBTCoolerSensor(alertconfigs.get(i),
+						lastUpdatedTime);
+			} else if (alertType.equalsIgnoreCase(enumAlerts.BLEHUMIDITY3
+					.name())) {
+				alertDetails.addBTCoolerSensor(alertconfigs.get(i),
+						lastUpdatedTime);
+			} else if (alertType.equalsIgnoreCase(enumAlerts.BLEHUMIDITY4
+					.name())) {
+				alertDetails.addBTCoolerSensor(alertconfigs.get(i),
+						lastUpdatedTime);
+			} else if (alertType.equalsIgnoreCase(enumAlerts.HARSHACCELERATION
+					.name())) {
+				alertDetails.addHarshAcceleration(alertconfigs.get(i),
+						lastUpdatedTime);
+			} else if (alertType.equalsIgnoreCase(enumAlerts.DEVICETEMPERD
+					.name())) {
+				alertDetails.addDeviceTemperd(alertconfigs.get(i),
+						lastUpdatedTime);
+			} else if (alertType.equalsIgnoreCase(enumAlerts.EVENTALERT.name())) {
+				alertDetails.addEventAlert(alertconfigs.get(i),
+						lastUpdatedTime);
+			}
+			tempVin = vinNew;
+		}
+		// get all vin from freeform,geozones, landmark,route
+		if (vin == null) {
+			getOtherAlertVins(null);
+		}
+		System.out.println("mapvalue" + map.size());
+		System.out.println("aleetVinMap" + alertVinMap.size());
+	}
+
+	public List<Alertconfig> getAlertConfig(String vin) {
+		LOGGER.error("AlertConfigCacheEJB::getAlertConfig::Entered into this method"
+				+ "vin" + vin);
+		String getVehicleConfig = "";
+		try {
+			if (vin != null) {
+				getVehicleConfig = "SELECT ac FROM Alertconfig ac WHERE vin = '"
+						+ vin + "' AND alertStatus = '1'";
+			} else {
+				getVehicleConfig = "SELECT ac FROM Alertconfig ac WHERE alertStatus = '1' order by vin";
+			}
+
+			Query vehiConfigQuery = em.createQuery(getVehicleConfig);
+			LOGGER.info("Before Query Excecute Query::" + vehiConfigQuery);
+			List<Alertconfig> alertConfigs = (List<Alertconfig>) vehiConfigQuery
+					.getResultList();
+			return alertConfigs;
+		} catch (Exception e) {
+			LOGGER.error("AlertConfigCacheEJB::getAlertConfig::Error in getting alert config for vin="
+					+ vin + " :" + e);
+			return null;
+		}
+	}
+
+	public Date getLastUpdateTime(String vin, String alertType) {
+		LOGGER.info("AlertConfigCacheEJB::getLastUpdateTime::Entered into this method"
+				+ "vin" + vin);
+		String getVehicleConfig = "";
+		Date lastUpdateTime;
+		try {
+			getVehicleConfig = "SELECT MAX(`eventTimeStamp`) FROM vehiclealerts WHERE vin='"
+					+ vin + "' AND  alerttype='" + alertType + "'";
+			Query vehiConfigQuery = em.createNativeQuery(getVehicleConfig);
+			lastUpdateTime = (Date) vehiConfigQuery.getSingleResult();
+			if (lastUpdateTime == null) {
+				String strLastAlertDateTime = TimeZoneUtil
+						.getTimeINYYYYMMddss(new Date());
+				Date datecurrentDateTime = sdfTime.parse(strLastAlertDateTime);
+				lastUpdateTime = datecurrentDateTime;
+			}
+			return lastUpdateTime;
+		} catch (Exception e) {
+			LOGGER.error("AlertConfigCacheEJB::getLastUpdateTime::Error in getting alert config for vin="
+					+ vin + " : e");
+			return null;
+		}
+	}
+
+	@SuppressWarnings("unchecked")
+	public void getLastUpdateTime() {
+		LOGGER.info(">NEW< AlertConfigCacheEJB::getLastUpdateTime::Entered");
+		try {
+			alertsLastUpdateTime.clear();
+			Query query = em
+					.createNativeQuery("SELECT vin,alerttype,MAX(eventtimestamp) FROM vehiclealerts GROUP BY vin,alerttype");
+			List<Object[]> vehicleAlerts = query.getResultList();
+			if (vehicleAlerts != null) {
+				for (Object[] va : vehicleAlerts) {
+					String key = String.valueOf(va[0]) + "-"
+							+ String.valueOf(va[1]);
+					alertsLastUpdateTime.put(key, (Date) va[2]);
+				}
+			}
+			LOGGER.info(">NEW< AlertConfigCacheEJB::getLastUpdateTime::Exited");
+		} catch (Exception e) {
+			LOGGER.error(">NEW< AlertConfigCacheEJB::getLastUpdateTime:: >" + e);
+			e.printStackTrace();
+		}
+	}
+
+	// get vin from freeform,geozones, landmark,route
+
+	public String getOtherAlertVins(String vin) {
+		LOGGER.info("AlertConfigCacheEJB::getOtherAlertVins::Entered into this method"
+				+ "vin" + vin);
+		String getVehicle = "";
+		try {
+			if (vin != null) {
+				alertVinMap.put(vin, true);
+			} else {
+				getVehicle = "SELECT vin FROM vehicle_has_freeform WHERE status='1' UNION SELECT vehicle_vin FROM vehicle_has_geozones WHERE status='1' UNION"
+						+ " SELECT vin FROM vehicle_has_landmark WHERE status='1' UNION"
+						+ " SELECT vin FROM vehicle_has_route WHERE status='1' GROUP BY vin ORDER BY vin ASC";
+
+				Query vehiConfigQuery = em.createNativeQuery(getVehicle);
+				List<Object> list = vehiConfigQuery.getResultList();
+
+				if (!list.isEmpty()) {
+
+					for (int i = 0; i < list.size(); i++) {
+						alertVinMap.put(list.get(i).toString(), true);
+					}
+
+				}
+				LOGGER.info("Before Query Excecute Query::" + vehiConfigQuery);
+
+			}
+
+			return "Sucess";
+		} catch (Exception e) {
+			LOGGER.error("AlertConfigCacheEJB::getOtherAlertVins::Error in getting alert config for vin="
+					+ vin + " : e");
+			return null;
+		}
+	}
+
+	@Override
+	public void startCompanySettingCache() {
+		LOGGER.info("AlertConfigCacheEJB::startCompanySettingCache::Entered into this method"
+				+ "vin" + vin);
+		try {
+			Query q1 = em
+					.createQuery("SELECT c from Companysettings c where c.id.appsettingsKey=:appkey");
+			q1.setParameter("appkey", "ticketManagementEnabled");
+			@SuppressWarnings("unchecked")
+			List<Companysettings> comList = q1.getResultList();
+			companySettingMap.clear();
+			if (comList != null) {
+				for (int i = 0; i < comList.size(); i++) {
+					Companysettings com = comList.get(i);
+					Map<String, String> appl = new HashMap<String, String>();
+					appl.put(com.getCompany().getCompanyId(), com.getId()
+							.getAppsettingsKey());
+					companySettingMap.put(appl, com.getId().getValues());
+				}
+			}
+		} catch (Exception e) {
+			LOGGER.error("AlertConfigCacheEJB:: Error " + e);
+			e.printStackTrace();
+		}
+	}
+
+	public void addAlertsSession(Session session, String content) {
+		try {
+			LOGGER.error("inserting Hmap for alertSession");
+			alertsSessions.put(session, content);
+		} catch (Exception e) {
+			LOGGER.error("addAlertsSession:: Error " + e);
+			e.printStackTrace();
+		}
+	}
+
+	public void removeAlertsSession(Session session, CloseReason reason) {
+		try {
+			alertsSessions.remove(session);
+		} catch (Exception e) {
+			LOGGER.error("addAlertsSession:: Error " + e);
+			e.printStackTrace();
+		}
+	}
+
+	public void addInventory(String imeiNo, String status) {
+		if (imeiNo != "null") {
+			isImeiAvailable.put(imeiNo, status);
+		} else {
+			isImeiAvailable.clear();
+		}
+	}
+}

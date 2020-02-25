@@ -1,0 +1,865 @@
+package com.eiw.device.handler;
+
+import java.io.ByteArrayInputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.InputStream;
+import java.math.BigInteger;
+import java.net.Socket;
+import java.net.SocketTimeoutException;
+import java.net.URL;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.net.URL;
+import java.net.URLConnection;
+
+import org.apache.commons.io.IOUtils;
+import org.jboss.logging.Logger;
+import org.json.JSONObject;
+
+import com.eiw.device.ejb.FleetTrackingDeviceListenerBORemote;
+import com.eiw.device.ejb.VehicleComposite;
+import com.eiw.device.handler.method.SKTHandlerMethods;
+import com.eiw.device.listener.ListenerStarter;
+import com.eiw.device.teltonika.AvlData;
+import com.eiw.device.teltonika.AvlDataFM4;
+import com.eiw.device.teltonika.Codec12Format;
+import com.eiw.device.teltonika.CodecStore;
+import com.eiw.device.teltonika.IOElement;
+import com.eiw.device.teltonika.LTSByteWrapper;
+import com.eiw.device.teltonika.LongIOElement;
+import com.eiw.device.teltonika.Tools;
+import com.eiw.server.TimeZoneUtil;
+import com.eiw.server.bo.BOFactory;
+import com.eiw.server.fleettrackingpu.Odometercalc;
+import com.eiw.server.fleettrackingpu.OdometercalcId;
+import com.eiw.server.fleettrackingpu.Vehicle;
+import com.eiw.server.fleettrackingpu.Vehicleevent;
+import com.eiw.server.fleettrackingpu.VehicleeventId;
+
+public class TeltonikaDeviceHandler extends DeviceHandler {
+
+	/**
+	 * Description of TeltonikaDeviceProtocolHandler
+	 * 
+	 * Description ----------- The DeviceProtocalHandlerSelecter identifies the
+	 * make of the device by analyzing the first character of the received data.
+	 * If it is found to be Teltonika device,this class handles the received
+	 * socket.
+	 */
+	private static final Logger LOGGER = Logger.getLogger("listener");
+	private static String commandStatus;
+	private static final String STR_FMECO3 = "FMEco3", STR_PRO3 = "FMPro3",
+			VERSION_ONE = "V1", VERSION_SEC = "V2";
+	private String arr[] = { "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
+			"A", "B", "C", "D", "E", "F" };
+	private SKTHandlerMethods sktHandlerMethods;
+
+	public void handleDevice() {
+		LOGGER.info("Entered Teltonika five mins Handle Device:" + new Date());
+		sktHandlerMethods = new SKTHandlerMethods();
+		FleetTrackingDeviceListenerBORemote fleetTrackingDeviceListenerBO = BOFactory
+				.getFleetTrackingDeviceListenerBORemote();
+		DataInputStream clientSocketDis = null;
+		DataOutputStream dos = null;
+		try {
+			clientSocket.setSoTimeout(300000);
+			clientSocketDis = new DataInputStream(clientSocket.getInputStream());
+
+			String imeiNo = clientSocketDis.readUTF();
+			VehicleComposite vehicleComposite = fleetTrackingDeviceListenerBO
+					.getVehicle(imeiNo);
+			dos = new DataOutputStream(clientSocket.getOutputStream());
+			if (vehicleComposite == null) {
+				LOGGER.error("Received IMEI No is invalid... returning... "
+						+ imeiNo);
+				dos.writeBoolean(false);
+				return;
+			} else {
+				dos.writeBoolean(true);
+				LOGGER.info("writeBoolean(true).........");
+			}
+
+			super.deviceImei = imeiNo;
+			ListenerStarter.teltonikaDeviceHandlerMap.put(deviceImei, this);
+
+			while (true) {
+				byte[] packet = LTSByteWrapper
+						.unwrapFromStream(clientSocketDis);
+				if (packet == null) {
+					LOGGER.error("Data Packet Null. Closing connection: "
+							+ clientSocket);
+					return;
+				}
+				if (ListenerStarter.teltonikaDeviceHandlerMap.get(deviceImei) == null) {
+					ListenerStarter.teltonikaDeviceHandlerMap.put(deviceImei,
+							this);
+				}
+				LOGGER.info("bytes length inside while(isDCRunning) @"
+						+ new Date() + "=" + packet.length + " codec "
+						+ packet[0]);
+				if (packet[0] == 0x0C) {
+					String command = Tools.bufferToHex(packet);
+					LOGGER.info("Received response : " + command);
+					byte[] bytes = { packet[3], packet[4], packet[5], packet[6] };
+					int commandSize = Codec12Format.byteArrayToInt(bytes) * 2;
+					commandStatus = Codec12Format
+							.hexStringToASCIIString(command.substring(14,
+									14 + commandSize));
+				} else {
+
+					AvlData decoder = CodecStore.getInstance()
+							.getSuitableCodec(packet);
+					if (decoder == null) {
+						LOGGER.error("Unknown packet format: "
+								+ Tools.bufferToHex(packet));
+						dos.writeInt(0);
+					} else {
+						LOGGER.info("Codec found: " + decoder);
+						AvlData[] decoded = decoder.decode(packet);
+						LOGGER.info(new Date() + ": Received records:"
+								+ decoded.length);
+						dos.writeInt(decoded.length);
+						LOGGER.info("Device notified of the number of records received");
+
+						insertService(vehicleComposite, decoded, packet.length,
+								fleetTrackingDeviceListenerBO, imeiNo);
+					}
+				}
+			}
+		} catch (SocketTimeoutException e) {
+			LOGGER.error("SocketTimeoutExceptiontion while receiving the Message "
+					+ e);
+		} catch (Exception e) {
+			LOGGER.error("Exception while receiving the Message " + e);
+		} finally {
+			if (deviceImei != null) {
+				ListenerStarter.teltonikaDeviceHandlerMap.remove(deviceImei);
+			}
+			cleanUpSockets(clientSocket, clientSocketDis, dos);
+			LOGGER.info("DeviceCommunicatorThread:DeviceCommunicator Completed");
+		}
+	}
+
+	private List<Vehicleevent> prepareVehicleEvents(Vehicle vehicle,
+			AvlData[] avlDataArray, long byteTrx,
+			FleetTrackingDeviceListenerBORemote fleetTrackingDeviceListenerBO,
+			String imeiNo) {
+		Odometercalc odometercalc = new Odometercalc();
+		OdometercalcId id = new OdometercalcId();
+		long odometerValue;
+		boolean isOdometer = false;
+		String[] reverseSetting = null;
+		JSONObject sensorsValue = new JSONObject();
+		Vehicleevent prevVE = MeiTrackDeviceHandler.getPrevVE(vehicle.getVin());
+		try {
+			String aiValueCheckmdl, aiValueCheckVal;
+			String[] aiVal, vehModel;
+			if (!SKTHandlerMethods.aiVolCheckMdl.isEmpty()
+					&& SKTHandlerMethods.aiVolCheckMdl.get(vehicle
+							.getCompanyId()) != null) {
+				vehModel = (SKTHandlerMethods.aiVolCheckMdl.get(vehicle
+						.getCompanyId())).split(",");
+				aiVal = (SKTHandlerMethods.aiVolCheckVal.get(vehicle
+						.getCompanyId())).split(",");
+			} else {
+				aiValueCheckmdl = fleetTrackingDeviceListenerBO
+						.getCompanySettings("vehModel", vehicle.getCompanyId());
+				aiValueCheckVal = fleetTrackingDeviceListenerBO
+						.getCompanySettings("vehAiVal", vehicle.getCompanyId());
+
+				SKTHandlerMethods.aiVolCheckMdl.put(vehicle.getCompanyId(),
+						aiValueCheckmdl);
+				vehModel = aiValueCheckmdl.split(",");
+
+				SKTHandlerMethods.aiVolCheckVal.put(vehicle.getCompanyId(),
+						aiValueCheckVal);
+				aiVal = aiValueCheckVal.split(",");
+			}
+
+			LOGGER.info("PreparevehicleEvents: " + "Vehicle" + vehicle
+					+ "avldata" + avlDataArray + "byteTrx" + byteTrx);
+			String region = fleetTrackingDeviceListenerBO
+					.getTimeZoneRegion(vehicle.getVin());
+			// Device Model - For Ruptela 'FMEco3' : a new converter
+			String deviceModel = fleetTrackingDeviceListenerBO
+					.getDeviceModelName(vehicle.getVin());
+			String previousOdometer = null;
+			if ((deviceModel.equalsIgnoreCase(STR_FMECO3))
+					|| (deviceModel.equalsIgnoreCase(STR_PRO3))) {
+				previousOdometer = fleetTrackingDeviceListenerBO
+						.previousOdometer(vehicle.getVin(), imeiNo);
+				id.setVin(vehicle.getVin());
+				id.setImeiNo(imeiNo);
+				odometercalc.setDeviceModel(deviceModel);
+			}
+			if (vehicle.getReverseSetting() != null) {
+				reverseSetting = (vehicle.getReverseSetting()).split("|");
+			}
+
+			List<Vehicleevent> vehicleEvents = new ArrayList<Vehicleevent>();
+			for (int i = 0; i < avlDataArray.length; i++) {
+				isOdometer = false;
+				AvlDataFM4 avlData = (AvlDataFM4) avlDataArray[i];
+				Vehicleevent vehicleEvent = new Vehicleevent();
+				VehicleeventId vehicleeventId = new VehicleeventId();
+				String longitudeAsString = String.valueOf(avlData
+						.getGpsElement().getX());
+				String latitudeAsString = String.valueOf(avlData
+						.getGpsElement().getY());
+				try {
+
+					int longitudeLength = longitudeAsString.length() - 7;
+					int latitudeLength = latitudeAsString.length() - 7;
+
+					Double longitude = Double.parseDouble(longitudeAsString
+							.substring(0, longitudeLength)
+							+ "."
+							+ longitudeAsString.substring(longitudeLength));
+
+					Double latitude = Double.parseDouble(latitudeAsString
+							.substring(0, latitudeLength)
+							+ "."
+							+ latitudeAsString.substring(latitudeLength));
+					LOGGER.info("PreparevehicleEvents: avlData " + avlData);
+					LOGGER.info("PreparevehicleEvents: avlData Timestamp "
+							+ new Date(avlData.getTimestamp()));
+					vehicleEvent.setLongitude(longitude);
+					vehicleEvent.setLatitude(latitude);
+				} catch (Exception e) {
+					LOGGER.error("PreparevehicleEvents: avlData String Substr"
+							+ e + "\n Input is =" + longitudeAsString + ","
+							+ latitudeAsString);
+					return null;
+				}
+
+				vehicleeventId.setEventTimeStamp(TimeZoneUtil.getDateTimeZone(
+						new Date(avlData.getTimestamp()), region));
+
+				if (((int) avlData.getGpsElement().getSatellites()) < 10) {
+					if (prevVE != null) {
+						vehicleEvent.setSpeed(prevVE.getSpeed());
+					} else {
+						vehicleEvent.setSpeed(0);
+					}
+				} else {
+					vehicleEvent.setSpeed((int) avlData.getGpsElement()
+							.getSpeed());
+				}
+
+				// vehicleEvent.setSpeed((int)
+				// avlData.getGpsElement().getSpeed());
+
+				vehicleeventId.setVin(vehicle.getVin());
+				vehicleEvent.setBytesTrx(byteTrx);
+				vehicleEvent.setId(vehicleeventId);
+				vehicleEvent.setEventSource(avlData.getTriggeredPropertyId());
+				vehicleEvent.setPriority((int) avlData.getPriority());
+				vehicleEvent.setServerTimeStamp(TimeZoneUtil.getDateTimeZone(
+						new Date(), region));
+
+				// pointer
+				if (vehicleEvent.getSpeed() != 0) {
+					double odometer = distanceMatrix(prevVE.getLatitude(),
+							prevVE.getLongitude(), vehicleEvent.getLatitude(),
+							vehicleEvent.getLongitude());
+					if (odometer >= 20000) {
+						return null;
+					}
+					vehicleEvent.setOdometer((long) odometer);
+				}
+
+				IOElement ioElement = avlData.getInputOutputElement();
+				int[] propertyIDs = null;
+				String ioProperty = "";
+				LongIOElement longIOElement = (LongIOElement) ioElement;
+				propertyIDs = longIOElement.getAvailableLongProperties();
+				if (propertyIDs.length > 0) {
+					ioProperty = "" + propertyIDs[0] + "="
+							+ longIOElement.getLongProperty(propertyIDs[0])[1];
+					for (int index = 1; index < propertyIDs.length; index++) {
+						int propertyID = propertyIDs[index];
+						if (propertyID == 132) {
+							String hexValue = hexStringToASCIIString(String
+									.valueOf(longIOElement
+											.getLongProperty(propertyID)[1]));
+							DataInputStream in = new DataInputStream(
+									new ByteArrayInputStream(
+											hexValue.getBytes()));
+							in.readByte();
+							String securityState = "";
+							int flag1 = in.readByte();
+							securityState = securityState + "keyIgnition:"
+									+ ((flag1 & 0x01) == 0 ? "0" : "1")
+									+ ";ignition:"
+									+ ((flag1 & 0x02) == 0 ? "0" : "1")
+									+ ";ignitionOn:"
+									+ ((flag1 & 0x04) == 0 ? "0" : "1")
+									+ ";webasto:"
+									+ ((flag1 & 0x08) == 0 ? "0" : "1");
+							int flag2 = in.readByte();
+							securityState = securityState + "parking:"
+									+ ((flag2 & 0x01) == 0 ? "0" : "1")
+									+ ";handBreak:"
+									+ ((flag2 & 0x10) == 0 ? "0" : "1")
+									+ ";footBreak:"
+									+ ((flag2 & 0x20) == 0 ? "0" : "1")
+									+ ";engineWorking:"
+									+ ((flag2 & 0x40) == 0 ? "0" : "1")
+									+ ";reverse:"
+									+ ((flag2 & 0x80) == 0 ? "0" : "1");
+							int flag3 = in.readByte();
+							securityState = securityState + "frontLeftDoor:"
+									+ ((flag3 & 0x01) == 0 ? "0" : "1")
+									+ ";frontLRightDoor:"
+									+ ((flag3 & 0x02) == 0 ? "0" : "1")
+									+ ";rearLeftDoor:"
+									+ ((flag3 & 0x04) == 0 ? "0" : "1")
+									+ ";rearRightDoor:"
+									+ ((flag3 & 0x08) == 0 ? "0" : "1")
+									+ ";engineCover:"
+									+ ((flag3 & 0x10) == 0 ? "0" : "1")
+									+ ";trunkCover:"
+									+ ((flag3 & 0x20) == 0 ? "0" : "1");
+							ioProperty = ioProperty + "," + propertyID + "="
+									+ securityState;
+						} else {
+							ioProperty = ioProperty
+									+ ","
+									+ propertyID
+									+ "="
+									+ (longIOElement
+											.getLongProperty(propertyID)[1]);
+						}
+					}
+				}
+
+				vehicleEvent.setIoevent(ioProperty);
+
+				Map<Integer, Integer> hmapIO = new HashMap<Integer, Integer>();
+
+				// Default AI, DI, Temperature Inserts
+				String[] ioDetailsfromVehicleEvent = ioProperty.split(",");
+				try {
+					for (int j = 0; j < ioDetailsfromVehicleEvent.length; j++) {
+						String[] inputTypefromVehicleEvent = ioDetailsfromVehicleEvent[j]
+								.split("=");
+						// hmapIO.put(
+						// Integer.parseInt(inputTypefromVehicleEvent[0]),
+						// Integer.parseInt(inputTypefromVehicleEvent[1]));
+
+						if (inputTypefromVehicleEvent.length > 1) {
+							if (inputTypefromVehicleEvent[0]
+									.equalsIgnoreCase("72")) {
+								vehicleEvent.setTempSensor1(Long
+										.valueOf(inputTypefromVehicleEvent[1]));
+								sensorsValue.put("TEMP1", Long
+										.valueOf(inputTypefromVehicleEvent[1]));
+							} else if (inputTypefromVehicleEvent[0]
+									.equalsIgnoreCase("73")) {
+								vehicleEvent.setTempSensor2(Long
+										.valueOf(inputTypefromVehicleEvent[1]));
+								sensorsValue.put("TEMP2", Long
+										.valueOf(inputTypefromVehicleEvent[1]));
+							} else if (inputTypefromVehicleEvent[0]
+									.equalsIgnoreCase("74")) {
+								vehicleEvent.setTempSensor3(Long
+										.valueOf(inputTypefromVehicleEvent[1]));
+								sensorsValue.put("TEMP3", Long
+										.valueOf(inputTypefromVehicleEvent[1]));
+							} else if (inputTypefromVehicleEvent[0]
+									.equalsIgnoreCase("199")) {
+							} else if (inputTypefromVehicleEvent[0]
+									.equalsIgnoreCase("66")) {
+								vehicleEvent
+										.setBattery(Long
+												.parseLong(inputTypefromVehicleEvent[1]));
+								vehicleEvent
+										.setAi3(Integer
+												.parseInt(inputTypefromVehicleEvent[1]));
+							} else if (inputTypefromVehicleEvent[0]
+									.equalsIgnoreCase("9")) {
+								vehicleEvent
+										.setAi1(Integer
+												.parseInt(inputTypefromVehicleEvent[1]));
+							} else if (inputTypefromVehicleEvent[0]
+									.equalsIgnoreCase("10")) {
+								vehicleEvent
+										.setAi2(Integer
+												.parseInt(inputTypefromVehicleEvent[1]));
+							}
+
+							else if (inputTypefromVehicleEvent[0]
+									.equalsIgnoreCase("11")) {
+								vehicleEvent
+										.setAi3(Integer
+												.parseInt(inputTypefromVehicleEvent[1]));
+							} else if (inputTypefromVehicleEvent[0]
+									.equalsIgnoreCase("19")) {
+								vehicleEvent
+										.setAi4(Integer
+												.parseInt(inputTypefromVehicleEvent[1]));
+							} else if (inputTypefromVehicleEvent[0]
+									.equalsIgnoreCase("1")) {
+								vehicleEvent
+										.setEngine((inputTypefromVehicleEvent[1]
+												.trim().equalsIgnoreCase("1")) ? true
+												: false);
+								vehicleEvent
+										.setDi1(Integer
+												.parseInt(inputTypefromVehicleEvent[1]));
+							} else if (inputTypefromVehicleEvent[0]
+									.equalsIgnoreCase("2")) {
+								if (vehicle.getReverseSetting() != null
+										&& reverseSetting[0]
+												.equalsIgnoreCase("1")) {
+									if (vehicleEvent.getEngine()) {
+										if (Arrays.asList(vehModel).contains(
+												vehicle.getVehiclemodel())
+												&& (vehicle.getVehicletype())
+														.equals(VERSION_ONE)) {
+
+											if (Integer.parseInt(aiVal[0]) > (vehicleEvent
+													.getAi1())) {
+												vehicleEvent.setDi2(1);
+											} else {
+												if (Integer.parseInt(aiVal[1]) < (vehicleEvent
+														.getAi1())) {
+													vehicleEvent.setDi2(0);
+												} else {
+													vehicleEvent.setDi2(0);
+												}
+											}
+										} else {
+											if ((Integer
+													.parseInt(inputTypefromVehicleEvent[1])) == 1)
+												vehicleEvent.setDi2(0);
+											else
+												vehicleEvent.setDi2(1);
+										}
+									} else {
+										vehicleEvent.setDi2(0);
+									}
+								} else {
+									vehicleEvent
+											.setDi2(Integer
+													.parseInt(inputTypefromVehicleEvent[1]));
+								}
+							} else if (inputTypefromVehicleEvent[0]
+									.equalsIgnoreCase("3")) {
+								if (vehicle.getReverseSetting() != null
+										&& reverseSetting[1]
+												.equalsIgnoreCase("1")) {
+									if (vehicleEvent.getEngine()) {
+										if (Arrays.asList(vehModel).contains(
+												vehicle.getVehiclemodel())
+												&& (vehicle.getVehicletype())
+														.equals(VERSION_ONE)) {
+
+											if (Integer.parseInt(aiVal[0]) > (vehicleEvent
+													.getAi1())) {
+												vehicleEvent.setDi3(1);
+											} else {
+												if (Integer.parseInt(aiVal[1]) < (vehicleEvent
+														.getAi1())) {
+													vehicleEvent.setDi3(0);
+												} else {
+													vehicleEvent.setDi3(0);
+												}
+											}
+										} else {
+											if ((Integer
+													.parseInt(inputTypefromVehicleEvent[1])) == 1)
+												vehicleEvent.setDi3(0);
+											else
+												vehicleEvent.setDi3(1);
+										}
+									} else {
+										vehicleEvent.setDi3(0);
+									}
+								} else {
+									vehicleEvent
+											.setDi3(Integer
+													.parseInt(inputTypefromVehicleEvent[1]));
+								}
+							} else if (inputTypefromVehicleEvent[0]
+									.equalsIgnoreCase("4")) {
+								if (vehicle.getReverseSetting() != null
+										&& reverseSetting[2]
+												.equalsIgnoreCase("1")) {
+									if (vehicleEvent.getEngine()) {
+										if (Arrays.asList(vehModel).contains(
+												vehicle.getVehiclemodel())
+												&& (vehicle.getVehicletype())
+														.equals(VERSION_ONE)) {
+
+											if (Integer.parseInt(aiVal[0]) > (vehicleEvent
+													.getAi1())) {
+												vehicleEvent.setDi4(1);
+											} else {
+												if (Integer.parseInt(aiVal[1]) < (vehicleEvent
+														.getAi1())) {
+													vehicleEvent.setDi4(0);
+												} else {
+													vehicleEvent.setDi4(0);
+												}
+											}
+										} else {
+											if ((Integer
+													.parseInt(inputTypefromVehicleEvent[1])) == 1)
+												vehicleEvent.setDi4(0);
+											else
+												vehicleEvent.setDi4(1);
+										}
+									} else {
+										vehicleEvent.setDi4(0);
+									}
+								} else {
+									vehicleEvent
+											.setDi4(Integer
+													.parseInt(inputTypefromVehicleEvent[1]));
+								}
+							} else if (inputTypefromVehicleEvent[0]
+									.equalsIgnoreCase("25")) {
+
+								sensorsValue.put("BLEtemp1", Long
+										.valueOf(inputTypefromVehicleEvent[1]));
+
+							} else if (inputTypefromVehicleEvent[0]
+									.equalsIgnoreCase("26")) {
+								sensorsValue.put("BLEtemp2", Long
+										.valueOf(inputTypefromVehicleEvent[1]));
+							} else if (inputTypefromVehicleEvent[0]
+									.equalsIgnoreCase("27")) {
+								sensorsValue.put("BLEtemp3", Long
+										.valueOf(inputTypefromVehicleEvent[1]));
+							} else if (inputTypefromVehicleEvent[0]
+									.equalsIgnoreCase("28")) {
+								sensorsValue.put("BLEtemp4", Long
+										.valueOf(inputTypefromVehicleEvent[1]));
+							}
+
+							else if (inputTypefromVehicleEvent[0]
+									.equalsIgnoreCase("29")) {
+								sensorsValue.put("BLEBatVolt1", Long
+										.valueOf(inputTypefromVehicleEvent[1]));
+							} else if (inputTypefromVehicleEvent[0]
+									.equalsIgnoreCase("20")) {
+								sensorsValue.put("BLEBatVolt2", Long
+										.valueOf(inputTypefromVehicleEvent[1]));
+							} else if (inputTypefromVehicleEvent[0]
+									.equalsIgnoreCase("22")) {
+								sensorsValue.put("BLEBatVolt3", Long
+										.valueOf(inputTypefromVehicleEvent[1]));
+							} else if (inputTypefromVehicleEvent[0]
+									.equalsIgnoreCase("23")) {
+								sensorsValue.put("BLEBatVolt4", Long
+										.valueOf(inputTypefromVehicleEvent[1]));
+							} else if (inputTypefromVehicleEvent[0]
+									.equalsIgnoreCase("86")) {
+								sensorsValue.put("BLEHumidity1", Long
+										.valueOf(inputTypefromVehicleEvent[1]));
+							} else if (inputTypefromVehicleEvent[0]
+									.equalsIgnoreCase("104")) {
+								sensorsValue.put("BLEHumidity2", Long
+										.valueOf(inputTypefromVehicleEvent[1]));
+							} else if (inputTypefromVehicleEvent[0]
+									.equalsIgnoreCase("106")) {
+								sensorsValue.put("BLEHumidity3", Long
+										.valueOf(inputTypefromVehicleEvent[1]));
+							} else if (inputTypefromVehicleEvent[0]
+									.equalsIgnoreCase("108")) {
+								sensorsValue.put("BLEHumidity4", Long
+										.valueOf(inputTypefromVehicleEvent[1]));
+							} else if (inputTypefromVehicleEvent[0]
+									.equalsIgnoreCase("78")
+									&& !inputTypefromVehicleEvent[1]
+											.equalsIgnoreCase("0")) {
+								LOGGER.error("Before HaxValue: "
+										+ inputTypefromVehicleEvent[1]);
+								String rfid = getRFIDValue(inputTypefromVehicleEvent[1]);
+								LOGGER.error("# Final rfid: " + rfid);
+								fleetTrackingDeviceListenerBO.persistIbutton(
+										rfid, vehicle.getVin(),
+										vehicle.getCompanyId(),
+										vehicle.getBranchId());
+								sensorsValue.put("RFID", rfid);
+							}
+						}
+					}
+					sensorsValue.put("Satellites", avlData.getGpsElement()
+							.getSatellites());
+					/*
+					 * if ((avlData.getGpsElement().getSatellites()) > 10) {
+					 * LOGGER.info("Teltonika Satellites Value" +
+					 * avlData.getGpsElement().getSatellites()); }
+					 */
+					vehicleEvent.setTags(sensorsValue.toString());
+				} catch (Exception e) {
+					LOGGER.error("TeltonikaDeviceProtocolHandler: PreparevehicleEvents: avlData for loop r"
+							+ e);
+					e.printStackTrace();
+					return null;
+				}
+				vehicleEvents.add(vehicleEvent);
+				MeiTrackDeviceHandler.prevVehicleeventMap.put(vehicleEvent
+						.getId().getVin(), vehicleEvent);
+				if ((deviceModel.equalsIgnoreCase(STR_FMECO3))
+						|| (deviceModel.equalsIgnoreCase(STR_PRO3))) {
+					if (isOdometer) {
+						fleetTrackingDeviceListenerBO
+								.persistOdometerCalc(odometercalc);
+						previousOdometer = String.valueOf(odometercalc
+								.getOdometerActual());
+					}
+				}
+			}
+			return vehicleEvents;
+		} catch (Exception e) {
+			LOGGER.error("TeltonikaDeviceProtocolHandler: PreparevehicleEvents: avlData String General"
+					+ e);
+			return null;
+
+		}
+	}
+
+	private void insertService(VehicleComposite vehicleComposite,
+			AvlData[] avlDataArray, long byteTrx,
+			FleetTrackingDeviceListenerBORemote fleetTrackingDeviceListenerBO,
+			String imeiNo) {
+		try {
+			Vehicle vehicle = vehicleComposite.getVehicle();
+			List<Vehicleevent> vehicleEvents = prepareVehicleEvents(vehicle,
+					avlDataArray, byteTrx, fleetTrackingDeviceListenerBO,
+					imeiNo);
+			if (vehicleEvents == null) {
+				LOGGER.error("Vehicle Events Null ");
+				return;
+			}
+			LOGGER.info("VehicleEvents prepared for vin="
+					+ vehicleEvents.get(0).getId().getVin() + " at "
+					+ new Date());
+			Collections.sort(vehicleEvents, new Comparator<Vehicleevent>() {
+				public int compare(Vehicleevent o1, Vehicleevent o2) {
+					return o1.getId().getEventTimeStamp()
+							.before(o2.getId().getEventTimeStamp()) ? -1 : 1;
+				}
+			});
+			for (Vehicleevent vehicleevent : vehicleEvents) {
+				if (vehicleevent.getEngine() != null) {
+					sktHandlerMethods
+							.persistEventAndGenerateAlert(null,
+									vehicleComposite, imeiNo, "teltonika",
+									vehicleevent);
+
+					LOGGER.info("VehicleEvents persisted");
+				}
+			}
+		} catch (Exception e) {
+			LOGGER.error("Exception while persisting data :: " + e);
+		}
+	}
+
+	public String sendCommand(String password, String model, String command,
+			Socket concoxDeviceSocket) {
+		String result = null;
+		try {
+			DataOutputStream out = new DataOutputStream(
+					concoxDeviceSocket.getOutputStream());
+			if (command.equalsIgnoreCase("cutOffEngine")) {
+				commandStatus = null;
+				String cutOffCommand = "setdigout 10\r\n";
+				if (model.equalsIgnoreCase("FM2200")) {
+					cutOffCommand = "#SET OUT=1,0\r\n";
+				}
+				String serverCommand = Codec12Format.encode(cutOffCommand);
+				// Equivalent Hex code for '$'
+				byte[] buffer = Codec12Format
+						.hexStringToByteArray(serverCommand);
+				out.write(buffer, 0, buffer.length);
+				LOGGER.info("Command sent successfully" + serverCommand);
+				int i = 0;
+				while (i < 30) {
+					if (commandStatus != null) {
+						result = commandStatus;
+						break;
+					} else {
+						Thread.sleep(1000);
+					}
+					i++;
+				}
+			} else if (command.equalsIgnoreCase("restoreEngine")) {
+				commandStatus = null;
+				String restoreCommand = "setdigout 00\r\n";
+				if (model.equalsIgnoreCase("FM2200")) {
+					restoreCommand = "#SET OUT=0,0\r\n";
+				}
+				String serverCommand = Codec12Format.encode(restoreCommand);
+				// Equivalent Hex code for '$'
+				byte[] buffer = Codec12Format
+						.hexStringToByteArray(serverCommand);
+				out.write(buffer, 0, buffer.length);
+				LOGGER.info("Command sent successfully" + serverCommand);
+				int i = 0;
+				while (i < 30) {
+					if (commandStatus != null) {
+						result = commandStatus;
+						break;
+					} else {
+						Thread.sleep(1000);
+					}
+					i++;
+				}
+			} else {
+				commandStatus = null;
+				String buzzerCommand = "";
+				if (command.equalsIgnoreCase("buzzerOn")) {
+					buzzerCommand = "setdigout 01\r\n";
+				} else if (command.equalsIgnoreCase("buzzerOff")) {
+					buzzerCommand = "setdigout 00\r\n";
+				}
+				String serverCommand = Codec12Format.encode(buzzerCommand);
+				// Equivalent Hex code for '$'
+				byte[] buffer = Codec12Format
+						.hexStringToByteArray(serverCommand);
+				out.write(buffer, 0, buffer.length);
+				LOGGER.info("Command sent successfully" + serverCommand);
+				int i = 0;
+				while (i < 2) {
+					if (commandStatus != null) {
+						result = commandStatus;
+						break;
+					} else {
+						Thread.sleep(1000);
+					}
+					i++;
+				}
+			}
+		} catch (Exception e) {
+			LOGGER.error("SendCommand : " + e);
+		}
+		return result;
+	}
+
+	public static String hexStringToASCIIString(String hexCode) {
+		StringBuilder sb = new StringBuilder();
+		for (int i = 0; i < hexCode.length() - 1; i += 2) {
+			// grab the hex in pairs
+			// convert hex to decimal
+			int decimal = Integer.parseInt(hexCode.substring(i, i + 2), 16);
+			// convert the decimal to character
+			sb.append((char) decimal);
+		}
+		return sb.toString();
+	}
+
+	private String getRFIDValue(String ioId) {
+		String hexaDecimalVal = decimalToHex(ioId);
+		return String.format("%010d",
+				hex2decimal(hexaDecimalVal.substring(8, 14)));
+	}
+
+	private String decimalToHex(String value) {
+		String finalOutput = "";
+		String output = "";
+		char[] stringToCharArray = null;
+		try {
+			LOGGER.error("value: " + value);
+			BigInteger number = new BigInteger(value);
+			LOGGER.error("number: " + number);
+			BigInteger hex = new BigInteger("16");
+			BigInteger[] val = {};
+
+			while (number.compareTo(hex) == 1 || number.compareTo(hex) == 0) {
+				val = number.divideAndRemainder(hex);
+				output = arr[val[1].intValue()] + output;
+				number = val[0];
+			}
+			output = arr[number.intValue()] + output;
+			LOGGER.error("Before output: " + output);
+			if (output.length() == 15) {
+				output = "0" + output;
+			}
+			for (int k = output.length(); k > 0; k = k - 2) {
+				finalOutput+=output.substring(k-2,k);
+			}
+
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return finalOutput;
+	}
+
+	private int hex2decimal(String s) {
+		String digits = "0123456789ABCDEF";
+		s = s.toUpperCase();
+		int val = 0;
+		for (int i = 0; i < s.length(); i++) {
+			char c = s.charAt(i);
+			int d = digits.indexOf(c);
+			val = 16 * val + d;
+		}
+		return val;
+	}
+
+	public double distance(double lat1, double lng1, double lat2, double lng2) {
+		double earthRadius = 6371000; // meters
+		double dLat = Math.toRadians(lat2 - lat1);
+		double dLng = Math.toRadians(lng2 - lng1);
+		double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+				+ Math.cos(Math.toRadians(lat1))
+				* Math.cos(Math.toRadians(lat2)) * Math.sin(dLng / 2)
+				* Math.sin(dLng / 2);
+		double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+		float dist = (float) (earthRadius * c);
+
+		return dist;
+	}
+
+	public double distanceMatrix(double lat1, double lng1, double lat2, double lng2) {
+		try {
+			URL url1 = new URL(
+					"https://maps.googleapis.com/maps/api/distancematrix/json?origins="
+							+ lat1
+							+ ","
+							+ lng1
+							+ "&destinations="
+							+ lat2
+							+ ","
+							+ lng2
+							+ "&mode=driving&language=en-EN&sensor=false&key=AIzaSyAb94T4OXJmVss7ArXmkKHb11PQ0fw6lyA");
+			URLConnection con = url1.openConnection();
+			InputStream in = con.getInputStream();
+			String encoding = "UTF-8";
+			String statusText = IOUtils.toString(in, encoding);
+			if (statusText == null || !statusText.contains("distance")) {
+				return distance(lat1, lng1, lat2, lng2);
+			}
+			JSONObject json = new JSONObject(statusText);
+			String rows = json.getString("rows");
+			JSONObject rowObject = new JSONObject(rows.substring(1,
+					rows.length() - 1));
+			String elements = rowObject.getString("elements");
+			JSONObject elementsObject = new JSONObject(elements.substring(1,
+					elements.length() - 1));
+			String distance = elementsObject.getString("distance");
+			JSONObject distanceObject = new JSONObject(distance);
+			// return Float.valueOf(distanceObject.getString("value"));
+			float finalValue = Float.valueOf(distanceObject.getString("value"));
+			if (finalValue >= 3000) {
+				return distance(lat1, lng1, lat2, lng2);
+			} else {
+				return finalValue;
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return distance(lat1, lng1, lat2, lng2);
+	}
+}

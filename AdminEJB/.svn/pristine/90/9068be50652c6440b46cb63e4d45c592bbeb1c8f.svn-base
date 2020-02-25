@@ -1,0 +1,162 @@
+package com.eiw.device.ais140v3;
+
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+
+import org.jboss.logging.Logger;
+
+import com.eiw.device.ais140v3.AIS140GpsDataV3;
+import com.eiw.device.ais140v3.Ais140HealthDataV3;
+
+public class AIS140ByteWrapperV3 {
+	private DataInputStream dis = null;
+	private DataOutputStream dos = null;
+	private String imei;
+	private String rawData;
+	private String configData;
+	private String[] deviceData;
+	private static final Logger LOGGER = Logger.getLogger("listener");
+	private AIS140GpsDataV3 ais140GpsDataV3 = new AIS140GpsDataV3();
+	private Ais140HealthDataV3 ais140HealthDataV3 = new Ais140HealthDataV3();
+	private int length;
+
+	public AIS140ByteWrapperV3(DataInputStream in, DataOutputStream out) {
+		this.dis = in;
+		this.dos = out;
+	}
+
+	public String getImei() {
+		return imei;
+	}
+
+	public void setImei(String imei) {
+		this.imei = imei;
+	}
+
+	public AIS140GpsDataV3 getAis140GpsDataV3() {
+		return ais140GpsDataV3;
+	}
+
+	public void setAis140GpsDataV3(AIS140GpsDataV3 ais140GpsDataV3) {
+		this.ais140GpsDataV3 = ais140GpsDataV3;
+	}
+
+	public Ais140HealthDataV3 getAis140HealthDataV3() {
+		return ais140HealthDataV3;
+	}
+
+	public void setAis140HealthDataV3(Ais140HealthDataV3 ais140HealthDataV3) {
+		this.ais140HealthDataV3 = ais140HealthDataV3;
+	}
+
+	public String getRawData() {
+		return rawData;
+	}
+
+	public void setRawData(String rawData) {
+		this.rawData = rawData;
+	}
+
+	public String[] getDeviceData() {
+		return deviceData;
+	}
+
+	public void setDeviceData(String[] deviceData) {
+		this.deviceData = deviceData;
+	}
+
+	public void unwrapDataFromStream() throws IOException {
+		try {
+			LOGGER.info("Entered Ais140V3 wrapper");
+			StringBuilder sb = new StringBuilder();
+			while (true) {
+				sb.append((char) this.dis.readByte());
+				if (sb.toString().contains("*")) {
+					int count = this.dis.available();
+					byte[] junk = new byte[count];
+					this.dis.readFully(junk);
+					break;
+				}
+			}
+			LOGGER.error("Ais140V3 Data = " + sb.toString());
+
+			if (sb.toString().contains("\n")) {
+				this.configData = sb.toString().split("\n")[1];
+				this.rawData = sb.toString().split("\n")[0];
+			} else {
+				this.rawData = sb.toString();
+			}
+
+			this.deviceData = this.rawData.split(",");
+			if (this.deviceData[0].equalsIgnoreCase("$LGN")
+					|| this.deviceData[0].equalsIgnoreCase("$IOT")
+					|| this.deviceData[0].equalsIgnoreCase("$HLT")) {
+				String[] temp = alterArray(this.deviceData,".",0);
+				String[] toEmpty = new String[0];
+				this.deviceData = toEmpty;
+				this.deviceData = temp;
+			}
+			this.length = this.deviceData.length;
+			if (this.deviceData.length <= 1 || this.deviceData[1].equalsIgnoreCase("$LGN")) {
+				LOGGER.error("-----------Ais140V4 Login Data  -------- ");
+				if(this.deviceData[1].equalsIgnoreCase("$LGN")){
+					this.imei = this.deviceData[4];
+				} else {
+					this.deviceData = this.rawData.split("\\$");
+					this.imei = this.deviceData[3];	
+				}
+				String responce = "$,1,*";
+				dos.write(responce.getBytes());
+			} else if (this.deviceData[4].equalsIgnoreCase("NR")
+					|| this.deviceData[4].equalsIgnoreCase("EA")
+					|| this.deviceData[4].equalsIgnoreCase("IN")
+					|| this.deviceData[4].equalsIgnoreCase("IF")
+					|| this.deviceData[4].equalsIgnoreCase("BL")
+					|| this.deviceData[4].equalsIgnoreCase("DT")
+					|| this.deviceData[4].equalsIgnoreCase("SC")) {
+				this.imei = this.deviceData[7];
+				LOGGER.error("------------ Ais140V3 GPS Data ------------ ");
+				this.ais140GpsDataV3.read(this.deviceData);
+			} else if (this.deviceData[4].equalsIgnoreCase("NM")) {
+				this.imei = this.deviceData[3];
+				LOGGER.error("-----------Ais140V3 EMR Data  -------- ");
+				this.ais140GpsDataV3.reademr(this.deviceData);
+			} else if (deviceData[1].equalsIgnoreCase("101") || deviceData[1].equalsIgnoreCase("$HLT")) {
+				this.imei = this.deviceData[4];
+				LOGGER.error("------------ Ais140V3 Health Data ------------ ");
+				// Read By HeathData
+				this.ais140HealthDataV3.read(this.deviceData);
+			}
+		} catch (IOException e) {
+			LOGGER.error("Ais140ByteWrapperV3 : " + e);
+			e.printStackTrace();
+			throw new IOException("Ais140ByteWrapperV3");
+		}
+	}
+
+	public int getLength() {
+		return length;
+	}
+
+	public void setLength(int length) {
+		this.length = length;
+	}
+
+	public String getConfigData() {
+		return configData;
+	}
+
+	public void setConfigData(String configData) {
+		this.configData = configData;
+	}
+	
+	public String[] alterArray(String[] a, String key, int index) {
+		String[] result = new String[a.length + 1];
+		System.arraycopy(a, 0, result, 0, index);
+		result[index] = key;
+		System.arraycopy(a, index, result, index + 1, a.length - index);
+		return result;
+	}
+
+}

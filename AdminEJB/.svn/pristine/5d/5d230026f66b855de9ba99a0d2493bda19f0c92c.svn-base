@@ -1,0 +1,247 @@
+package com.eiw.cron;
+
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
+
+import com.eiw.alerts.CheckAlerts;
+import com.eiw.alerts.CheckAnalogInputLeakage;
+import com.eiw.alerts.CheckAnalogInputRange;
+import com.eiw.alerts.CheckAntiTheft;
+import com.eiw.alerts.CheckBTCoolerSensor;
+import com.eiw.alerts.CheckBatteryVoltage;
+import com.eiw.alerts.CheckCoolerSensor;
+import com.eiw.alerts.CheckCorneringCount;
+import com.eiw.alerts.CheckEngineIdle;
+import com.eiw.alerts.CheckEngineStatusChange;
+import com.eiw.alerts.CheckEngineTowed;
+import com.eiw.alerts.CheckFatigue;
+import com.eiw.alerts.CheckFuelAlert;
+import com.eiw.alerts.CheckFuelTankLid;
+import com.eiw.alerts.CheckGPSPower;
+import com.eiw.alerts.CheckGsmSignalStrength;
+import com.eiw.alerts.CheckHarshAcceleration;
+import com.eiw.alerts.CheckHarshBraking;
+import com.eiw.alerts.CheckLowBattery;
+import com.eiw.alerts.CheckMovement;
+import com.eiw.alerts.CheckPanelAlarms;
+import com.eiw.alerts.CheckPanicAlert;
+import com.eiw.alerts.CheckPreventiveMaintenanceDue;
+import com.eiw.alerts.CheckOperationTime;
+import com.eiw.alerts.CheckOverspeed;
+import com.eiw.alerts.CheckPowerCut;
+import com.eiw.alerts.CheckSOS;
+import com.eiw.alerts.CheckScheduledMaintenanceDue;
+import com.eiw.alerts.CheckSeatBeltAlert;
+import com.eiw.alerts.CheckStop;
+import com.eiw.alerts.CheckWokeUp;
+import com.eiw.server.fleettrackingpu.Alertconfig;
+
+public class AlertDetails {
+
+	private CheckOverspeed overspeed = null;
+	private CheckBatteryVoltage batteryVoltage = null;
+	private CheckCoolerSensor coolerVoltage = null;
+	private CheckEngineIdle idleSpeed = null;
+	private CheckEngineTowed towedSpeed = null;
+	private CheckOperationTime operationTime = null;
+	private CheckFatigue fatigue = null;
+	private CheckWokeUp wokeUp = null;
+	private CheckGsmSignalStrength gsmSignalStrength = null;
+	private CheckAnalogInputRange analogInputRange = null;
+	private CheckAnalogInputLeakage analogInputLeakage = null;
+	private CheckGPSPower gpsPower = null;
+	private CheckFuelTankLid fuelTankLid = null;
+	private CheckEngineStatusChange engineStatusChange = null;
+	private CheckFuelAlert fuelAlert = null;
+	private CheckStop stop = null;
+	private CheckSOS sos = null;
+	private CheckLowBattery lowBattery = null;
+	private CheckPowerCut powerCut = null;
+	private CheckHarshBraking harshBraking = null;
+	private CheckCorneringCount corneringCount = null;
+	private CheckAntiTheft CheckAntiTheft = null;
+	private CheckPreventiveMaintenanceDue PreventiveMaintenanceDue = null;
+	private CheckScheduledMaintenanceDue ScheduledMaintenanceDue = null;
+	private CheckPanelAlarms PanelAlarms = null;
+	private CheckMovement Movement = null;
+	private CheckSeatBeltAlert seatBeltAlert = null;
+	private CheckPanicAlert panicAlert = null;
+	private CheckBTCoolerSensor btCoolerVoltage = null;
+	private CheckHarshAcceleration harshAcceleration = null;
+	Map<String, CheckAlerts> map = new HashMap<String, CheckAlerts>();
+
+	public AlertDetails() {
+
+	}
+
+	public void addOverSpeed(Alertconfig alertConfig, Date lastUpdatedTime) {
+		overspeed = new CheckOverspeed(alertConfig, lastUpdatedTime);
+		map.put(alertConfig.getId().getAlertType(), overspeed);
+	}
+
+	public void addBatteryVoltage(Alertconfig alertConfig, Date lastUpdatedTime) {
+		batteryVoltage = new CheckBatteryVoltage(alertConfig, lastUpdatedTime);
+		map.put(alertConfig.getId().getAlertType(), batteryVoltage);
+	}
+
+	public void addCoolerSensor(Alertconfig alertConfig, Date lastUpdatedTime) {
+		coolerVoltage = new CheckCoolerSensor(alertConfig, lastUpdatedTime);
+		map.put(alertConfig.getId().getAlertType(), coolerVoltage);
+	}
+
+	public void addEngineIdle(Alertconfig alertConfig, Date lastUpdatedTime) {
+		idleSpeed = new CheckEngineIdle(alertConfig, lastUpdatedTime);
+		map.put(alertConfig.getId().getAlertType(), idleSpeed);
+	}
+
+	public void addEngineTowed(Alertconfig alertConfig, Date lastUpdatedTime) {
+		towedSpeed = new CheckEngineTowed(alertConfig, lastUpdatedTime);
+		map.put(alertConfig.getId().getAlertType(), towedSpeed);
+	}
+
+	public void addOperationTime(Alertconfig alertConfig, Date lastUpdatedTime) {
+		operationTime = new CheckOperationTime(alertConfig, lastUpdatedTime);
+		map.put(alertConfig.getId().getAlertType(), operationTime);
+	}
+
+	public void addFatigue(Alertconfig alertConfig, Date lastUpdatedTime) {
+		fatigue = new CheckFatigue(alertConfig, lastUpdatedTime);
+		map.put(alertConfig.getId().getAlertType(), fatigue);
+	}
+
+	public void addWokeUp(Alertconfig alertConfig, Date lastUpdatedTime) {
+		wokeUp = new CheckWokeUp(alertConfig, lastUpdatedTime);
+		map.put(alertConfig.getId().getAlertType(), wokeUp);
+	}
+
+	public void addGsmSignalStrength(Alertconfig alertConfig,
+			Date lastUpdatedTime) {
+		gsmSignalStrength = new CheckGsmSignalStrength(alertConfig,
+				lastUpdatedTime);
+		map.put(alertConfig.getId().getAlertType(), gsmSignalStrength);
+	}
+
+	public void addAnalogInputRange(Alertconfig alertConfig,
+			Date lastUpdatedTime) {
+		analogInputRange = new CheckAnalogInputRange(alertConfig,
+				lastUpdatedTime);
+		map.put(alertConfig.getId().getAlertType(), analogInputRange);
+	}
+
+	public void addAnalogInputLeakage(Alertconfig alertConfig,
+			Date lastUpdatedTime) {
+		analogInputLeakage = new CheckAnalogInputLeakage(alertConfig,
+				lastUpdatedTime);
+		map.put(alertConfig.getId().getAlertType(), analogInputLeakage);
+	}
+
+	public void addGPSPower(Alertconfig alertConfig, Date lastUpdatedTime) {
+		gpsPower = new CheckGPSPower(alertConfig, lastUpdatedTime);
+		map.put(alertConfig.getId().getAlertType(), gpsPower);
+	}
+
+	public void addFuelTankLid(Alertconfig alertConfig, Date lastUpdatedTime) {
+		fuelTankLid = new CheckFuelTankLid(alertConfig, lastUpdatedTime);
+		map.put(alertConfig.getId().getAlertType(), fuelTankLid);
+	}
+
+	public void addEngineStatusChange(Alertconfig alertConfig,
+			Date lastUpdatedTime) {
+		engineStatusChange = new CheckEngineStatusChange(alertConfig,
+				lastUpdatedTime);
+		map.put(alertConfig.getId().getAlertType(), engineStatusChange);
+	}
+
+	public Map<String, CheckAlerts> getAllAlertConfigDetails() {
+		return this.map;
+	}
+
+	public void addFuelAlerts(Alertconfig alertConfig, Date lastUpdatedTime) {
+		fuelAlert = new CheckFuelAlert(alertConfig, lastUpdatedTime);
+		map.put(alertConfig.getId().getAlertType(), fuelAlert);
+	}
+
+	public void addStop(Alertconfig alertConfig, Date lastUpdatedTime) {
+		stop = new CheckStop(alertConfig, lastUpdatedTime);
+		map.put(alertConfig.getId().getAlertType(), stop);
+	}
+
+	public void addSOS(Alertconfig alertConfig, Date lastUpdatedTime) {
+		sos = new CheckSOS(alertConfig, lastUpdatedTime);
+		map.put(alertConfig.getId().getAlertType(), sos);
+	}
+
+	public void addLowBattery(Alertconfig alertConfig, Date lastUpdatedTime) {
+		lowBattery = new CheckLowBattery(alertConfig, lastUpdatedTime);
+		map.put(alertConfig.getId().getAlertType(), lowBattery);
+	}
+
+	public void addPowerCut(Alertconfig alertConfig, Date lastUpdatedTime) {
+		powerCut = new CheckPowerCut(alertConfig, lastUpdatedTime);
+		map.put(alertConfig.getId().getAlertType(), powerCut);
+	}
+
+	public void addHarshBraking(Alertconfig alertConfig, Date lastUpdatedTime) {
+		harshBraking = new CheckHarshBraking(alertConfig, lastUpdatedTime);
+		map.put(alertConfig.getId().getAlertType(), harshBraking);
+	}
+
+	public void addCorneringCount(Alertconfig alertConfig, Date lastUpdatedTime) {
+		corneringCount = new CheckCorneringCount(alertConfig, lastUpdatedTime);
+		map.put(alertConfig.getId().getAlertType(), corneringCount);
+	}
+
+	public void addAntiTheftCount(Alertconfig alertConfig, Date lastUpdatedTime) {
+		CheckAntiTheft = new CheckAntiTheft(alertConfig, lastUpdatedTime);
+		map.put(alertConfig.getId().getAlertType(), CheckAntiTheft);
+	}
+
+	public void addPreventiveMaintenanceDue(Alertconfig alertConfig,
+			Date lastUpdatedTime) {
+		PreventiveMaintenanceDue = new CheckPreventiveMaintenanceDue(
+				alertConfig, lastUpdatedTime);
+		map.put(alertConfig.getId().getAlertType(), PreventiveMaintenanceDue);
+	}
+
+	public void addScheduledMaintenanceDue(Alertconfig alertConfig,
+			Date lastUpdatedTime) {
+		ScheduledMaintenanceDue = new CheckScheduledMaintenanceDue(alertConfig,
+				lastUpdatedTime);
+		map.put(alertConfig.getId().getAlertType(), ScheduledMaintenanceDue);
+	}
+
+	public void addPanelAlarms(Alertconfig alertconfig, Date lastUpdatedTime) {
+		// TODO Auto-generated method stub
+		PanelAlarms = new CheckPanelAlarms(alertconfig, lastUpdatedTime);
+		map.put(alertconfig.getId().getAlertType(), PanelAlarms);
+	}
+
+	public void addMovement(Alertconfig alertconfig, Date lastUpdatedTime) {
+		// TODO Auto-generated method stub
+		Movement = new CheckMovement(alertconfig, lastUpdatedTime);
+		map.put(alertconfig.getId().getAlertType(), Movement);
+	}
+
+	public void addSeatBeltAlert(Alertconfig alertConfig, Date lastUpdatedTime) {
+		seatBeltAlert = new CheckSeatBeltAlert(alertConfig, lastUpdatedTime);
+		map.put(alertConfig.getId().getAlertType(), seatBeltAlert);
+	}
+
+	public void addPanicAlert(Alertconfig alertConfig, Date lastUpdatedTime) {
+		panicAlert = new CheckPanicAlert(alertConfig, lastUpdatedTime);
+		map.put(alertConfig.getId().getAlertType(), panicAlert);
+	}
+
+	public void addBTCoolerSensor(Alertconfig alertConfig, Date lastUpdatedTime) {
+		btCoolerVoltage = new CheckBTCoolerSensor(alertConfig, lastUpdatedTime);
+		map.put(alertConfig.getId().getAlertType(), btCoolerVoltage);
+	}
+
+	public void addHarshAcceleration(Alertconfig alertConfig,
+			Date lastUpdatedTime) {
+		harshAcceleration = new CheckHarshAcceleration(alertConfig,
+				lastUpdatedTime);
+		map.put(alertConfig.getId().getAlertType(), harshAcceleration);
+	}
+}

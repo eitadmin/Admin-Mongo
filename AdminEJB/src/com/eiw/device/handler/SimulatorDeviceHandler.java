@@ -1,0 +1,92 @@
+package com.eiw.device.handler;
+
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+
+import org.jboss.logging.Logger;
+
+import com.eiw.device.ejb.FleetTrackingDeviceListenerBORemote;
+import com.eiw.device.ejb.VehicleComposite;
+import com.eiw.server.bo.BOFactory;
+import com.eiw.server.fleettrackingpu.Vehicleevent;
+import com.eiw.server.fleettrackingpu.VehicleeventId;
+
+public class SimulatorDeviceHandler extends DeviceHandler {
+
+	private static final Logger LOGGER = Logger.getLogger("listener");
+
+	public void handleDevice() {
+		LOGGER.info("handleDevice: Entered Simulator five mins Handle Device:"
+				+ new Date());
+		FleetTrackingDeviceListenerBORemote entityManagerService = BOFactory
+				.getFleetTrackingDeviceListenerBORemote();
+		DataInputStream clientSocketDis = null;
+		DataOutputStream dos = null;
+		try {
+			this.clientSocket.setSoTimeout(300000);
+			LOGGER.info("handleDevice:Inside DOS try block");
+			clientSocketDis = new DataInputStream(
+					this.clientSocket.getInputStream());
+
+			LOGGER.info("handleDevice:Inside imei read UTF try block");
+			String imeiNo = clientSocketDis.readUTF();
+			LOGGER.info("handleDevice:exits imei read UTF try block");
+			VehicleComposite vehicleComposite = entityManagerService
+					.getVehicle(imeiNo);
+
+			dos = new DataOutputStream(this.clientSocket.getOutputStream());
+			if (vehicleComposite == null) {
+				LOGGER.error(" handleDevice: Received IMEI No is invalid... returning... "
+						+ imeiNo);
+				dos.writeBoolean(false);
+				LOGGER.info("handleDevice: writeBoolean(false).........");
+				return;
+			} else {
+				dos.writeBoolean(true);
+				LOGGER.info("handleDevice: writeBoolean(true).........");
+			}
+			/*
+			 * super.setName("" + vehicleComposite.getVehicle().getVin() + "::"
+			 * + super.getName());
+			 */
+
+			String data = clientSocketDis.readUTF();
+
+			List<Vehicleevent> vehicleEvents = prepareVehicleEvents(data,
+					vehicleComposite.getVehicle().getVin());
+			LOGGER.info("handleDevice: VehicleEvents prepared for vin="
+					+ vehicleEvents.get(0).getId().getVin() + " at "
+					+ new Date());
+			entityManagerService.persistDeviceData(vehicleEvents,
+					vehicleComposite);
+			dos.writeInt(vehicleEvents.size());
+			dos.flush();
+
+		} catch (Exception e) {
+			LOGGER.error("SimulatorDeviceProtocolHandler:handleDevice: Close client socket"
+					+ e);
+		} finally {
+			cleanUpSockets(this.clientSocket, clientSocketDis, dos);
+			LOGGER.info("DeviceCommunicatorThread:DeviceCommunicator Completed");
+		}
+		LOGGER.info("SimulatorDeviceProtocolHandler:handleDevice: Ended successfully::: ");
+	}
+
+	private List<Vehicleevent> prepareVehicleEvents(String data, String vin) {
+		List<Vehicleevent> vehicleEvents = new ArrayList<Vehicleevent>();
+		String dataSplit[] = data.split("#");
+		Vehicleevent vehicleEvent = new Vehicleevent();
+		VehicleeventId vehicleeventId = new VehicleeventId();
+		vehicleeventId.setEventTimeStamp(new Date());
+		vehicleEvent.setLongitude(Double.valueOf(dataSplit[0]));
+		vehicleEvent.setLatitude(Double.valueOf(dataSplit[1]));
+		vehicleEvent.setSpeed(100);
+		vehicleeventId.setVin(vin);
+		vehicleEvent.setId(vehicleeventId);
+		vehicleEvents.add(vehicleEvent);
+		return vehicleEvents;
+	}
+}

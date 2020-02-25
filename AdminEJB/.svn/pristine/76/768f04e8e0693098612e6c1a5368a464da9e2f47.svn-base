@@ -1,0 +1,122 @@
+package com.eiw.cron.skywave;
+
+import java.util.Date;
+import java.util.List;
+
+import javax.ejb.Stateless;
+import javax.persistence.EntityManager;
+import javax.persistence.PersistenceContext;
+import javax.persistence.Query;
+
+import org.jboss.logging.Logger;
+
+import com.eiw.server.TimeZoneUtil;
+import com.eiw.server.fleettrackingpu.Vehicleevent;
+import com.eiw.server.fleettrackingpu.VehicleeventId;
+
+@Stateless
+public class SkywaveInjectingEJB implements SkywaveInjectingEJBRemote {
+
+	@PersistenceContext(unitName = "ltmsfleettrackingpu")
+	private EntityManager em;
+	@PersistenceContext(unitName = "ltmsskymsgspu")
+	private EntityManager emSky;
+	private static final Logger LOGGER = Logger.getLogger("skywave");
+
+	public String injectSkyToVehicleEvent(List<Object[]> resultList) {
+		LOGGER.info("SkywaveInjectingEJB::injectSkyToVehicleEvent::Entered into this method"
+				+ "resultList" + resultList);
+		String status = null;
+		for (Object[] objectArray : resultList) {
+			Vehicleevent vehicleevent = new Vehicleevent();
+			VehicleeventId vehicleeventId = new VehicleeventId();
+
+			// Getting vin for terminal id
+			Query qGetVin = em
+					.createNativeQuery("select vehicle_vin from fleettrackingdb.vehicle_has_companytrackdevice where companytrackdevice_imeiNo = '"
+							+ objectArray[1].toString().trim() + "'");
+			Object objVin = null;
+			try {
+				LOGGER.info("Before Execute Query" + qGetVin);
+				objVin = qGetVin.getSingleResult();
+				LOGGER.info("After Query Execute" + qGetVin);
+				if (objVin != null) {
+					String vin = (String) objVin;
+					vehicleeventId.setVin(vin);
+					// converting varbinary to int
+					vehicleevent.setSpeed(((Integer) objectArray[2]));
+					vehicleevent.setLatitude(Float.parseFloat(objectArray[3]
+							.toString().trim()));
+					vehicleevent.setLongitude(Float.parseFloat(objectArray[4]
+							.toString().trim()));
+					Date skyDate = (Date) (objectArray[5]);
+					vehicleeventId.setEventTimeStamp(TimeZoneUtil
+							.getDateInTimeZone(skyDate));
+					vehicleevent.setServerTimeStamp(TimeZoneUtil
+							.getDateInTimeZone(new Date()));
+					boolean engineStatus = Boolean.parseBoolean(String
+							.valueOf(objectArray[6]));
+					vehicleevent.setEngine(engineStatus);
+					vehicleevent.setSkyid(Long.parseLong(objectArray[0]
+							.toString().trim()));
+					vehicleevent.setId(vehicleeventId);
+					if (!checkVehicleEvent(vehicleevent)) {
+						em.persist(vehicleevent);
+					}
+				}
+				status = "persisted";
+			} catch (Exception e) {
+				LOGGER.info("SkywaveInjectingEJB::injectSkyToVehicleEvent::Exception occured"
+						+ e);
+			}
+
+		}
+		LOGGER.info("SkywaveInjectingEJB::injectSkyToVehicleEvent::Leaving from this method successfully");
+		return status;
+	}
+
+	public int getLastSkyId() {
+		LOGGER.info("SkywaveInjectingEJB::getLastSkyId::Entered into this method");
+		String strSkyId = "SELECT MAX(v.skyId) FROM vehicleevent v WHERE v.skyId IS NOT NULL";
+		Query qSkyId = em.createNativeQuery(strSkyId);
+		if (qSkyId.getSingleResult() != null) {
+			LOGGER.info("Before Execute Query" + qSkyId);
+			int skyId = Integer.parseInt(((Object) qSkyId.getSingleResult())
+					.toString());
+			LOGGER.info("After Execute Query" + qSkyId);
+			return skyId;
+		} else {
+			return 0;
+		}
+	}
+
+	private boolean checkVehicleEvent(Vehicleevent vehicleEvent) {
+		LOGGER.info("SkywaveInjectingEJB::checkVehicleEvent Entered into this method"
+				+ "vehicleEvent" + vehicleEvent);
+		String vin = vehicleEvent.getId().getVin();
+		Date timeStamp = vehicleEvent.getId().getEventTimeStamp();
+		String stmt = "select e from Vehicleevent e where e.id.vin =:vin and e.id.eventTimeStamp =:timeStamp";
+		Query query = em.createQuery(stmt);
+		query.setParameter("vin", vin);
+		query.setParameter("timeStamp", timeStamp);
+		LOGGER.info("Before Execute Query" + query);
+		List<Object[]> alertList = query.getResultList();
+		LOGGER.info("After Execute Query" + query);
+		return (alertList.size() > 0) ? true : false;
+	}
+
+	public List<Object[]> pollSkyToVehicleEvent(int skyId) {
+		LOGGER.info("SkywaveInjectingEJB::pollSkyToVehicleEvent::Entered into this method "
+				+ "skyId" + skyId);
+		String strPollSkyDB = "SELECT rm.ID,rm.TerminalID,c.Speed,c.Latitude,c.Longitude,rm.Datestamp,c.Digital_Input_1 "
+				+ "FROM returnmessage rm, poll_0c c WHERE rm.ID = c.ReturnMessage_ID AND rm.PollNumber IS NOT NULL AND rm.ID >"
+				+ skyId + " GROUP BY rm.TerminalID,rm.Datestamp";
+		Query qPollSkyDB = emSky.createNativeQuery(strPollSkyDB);
+		LOGGER.info("Before Execute Query" + qPollSkyDB);
+		List<Object[]> resultList = qPollSkyDB.getResultList();
+		LOGGER.info("After Execute Query" + qPollSkyDB);
+		LOGGER.info("SkywaveInjectingEJB::pollSkyToVehicleEvent::Leaving from this method");
+		return resultList;
+
+	}
+}

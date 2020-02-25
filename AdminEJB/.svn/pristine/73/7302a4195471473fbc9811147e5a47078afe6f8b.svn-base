@@ -1,0 +1,360 @@
+package com.eiw.alerts;
+
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import org.json.JSONObject;
+
+import com.eiw.device.ejb.VehicleComposite;
+import com.eiw.server.TimeZoneUtil;
+import com.eiw.server.fleettrackingpu.Alertconfig;
+import com.eiw.server.fleettrackingpu.Heartbeatevent;
+import com.eiw.server.fleettrackingpu.Hourmeter;
+import com.eiw.server.fleettrackingpu.Maintenancedue;
+import com.eiw.server.fleettrackingpu.MaintenancedueId;
+import com.eiw.server.fleettrackingpu.Vehicle;
+import com.eiw.server.fleettrackingpu.VehicleHasIo;
+import com.eiw.server.fleettrackingpu.Vehiclealerts;
+import com.eiw.server.fleettrackingpu.Vehicleevent;
+
+public class CheckPreventiveMaintenanceDue implements CheckAlerts {
+
+	AlertsEJBRemote alertsEJBRemote = null;
+	AlertsManager alertsManager;
+	Alertconfig alertConfig = null;
+	Date lastUpdatedTime;
+	SimpleDateFormat sdfDate = new SimpleDateFormat("yyyy-MM-dd");
+	// public static Map<String, String> Preventive_Maintenance = new
+	// HashMap<String, String>();
+	public static Map<String, Integer> prevHour = new HashMap<String, Integer>();
+
+	public CheckPreventiveMaintenanceDue(AlertsManager alertsManager1) {
+		alertsManager = alertsManager1;
+		alertsEJBRemote = alertsManager.alertsEJBRemote;
+	}
+
+	public CheckPreventiveMaintenanceDue(Alertconfig alertConfig,
+			Date lastUpdatedTime) {
+		this.alertConfig = alertConfig;
+		this.lastUpdatedTime = lastUpdatedTime;
+	}
+
+	public void manageAlert(List<Vehicleevent> vehicleevents,
+			Alertconfig alertConfig, String vin, String plateNo) {
+		Vehicle vehicle = alertsEJBRemote.getVehicle(vin);
+		String description = null;
+		String type = vehicle.getVehicletype().getVehicleType();
+		boolean checkEngineHour = false;
+		Hourmeter hourmeter = null;
+		int currentEngineRunHour = 0;
+		List<Vehiclealerts> vehiclealerts = new ArrayList<Vehiclealerts>();
+		AlertsEJB.LOGGER.debug("Inside CheckPreventiveMaintenanceDue Alert ->");
+		for (Vehicleevent vehi : vehicleevents) {
+			if (type.equalsIgnoreCase("DEEPSEA GENERATOR")) {
+				checkEngineHour = vehi.getIoevent() != null
+						&& !vehi.getIoevent().equalsIgnoreCase("{}");
+			} else {
+				hourmeter = alertsEJBRemote.getHourMeter(vin);
+				if (hourmeter != null)
+					checkEngineHour = true;
+			}
+			if (checkEngineHour) {
+				// if (Preventive_Maintenance.get(vin) == null) {
+				// Preventive_Maintenance.put(vin,
+				// vehicle.getPreventiveMaintenance());
+				// }
+				try {
+					if (type.equalsIgnoreCase("DEEPSEA GENERATOR")) {
+						JSONObject ioevent = new JSONObject(vehi.getIoevent());
+						currentEngineRunHour = Integer.parseInt(ioevent.get(
+								"engineRunTime").toString()) / 60;
+					} else {
+						currentEngineRunHour = Integer.parseInt(hourmeter
+								.getTotRunningDuration());
+					}
+					// if (prevHour.get(vin) == null
+					// || currentEngineRunHour > prevHour.get(vin)) {
+					MaintenancedueId maintenancedueId = new MaintenancedueId();
+					maintenancedueId.setVin(vin);
+					maintenancedueId
+							.setMaintenanceType("PreventiveMaintenance");
+					Maintenancedue maintenancedue = alertsEJBRemote
+							.getMaintanceDue(maintenancedueId);
+					if (maintenancedue == null) {
+						Maintenancedue maintenance = new Maintenancedue();
+						maintenance.setId(maintenancedueId);
+						maintenance.setLastMaintenanceHours(String
+								.valueOf(currentEngineRunHour));
+						maintenance.setTimeToNextMaintenance(vehicle
+								.getPreventiveMaintenance().split(",")[0]);
+						maintenance.setLastUpdDt(vehi.getId()
+								.getEventTimeStamp());
+						alertsEJBRemote.updateMaintenanceDue(maintenance,
+								"insert");
+					} else {
+						int nextMaintenanceHour = Integer.parseInt(vehicle
+								.getPreventiveMaintenance().split(",")[1])
+								- (currentEngineRunHour - Integer
+										.parseInt(maintenancedue
+												.getLastMaintenanceHours()));
+						maintenancedue.setTimeToNextMaintenance(String
+								.valueOf(nextMaintenanceHour));
+						maintenancedue.setLastUpdDt(vehi.getId()
+								.getEventTimeStamp());
+						alertsEJBRemote.updateMaintenanceDue(maintenancedue,
+								"update");
+						if (nextMaintenanceHour == Integer.parseInt(vehicle
+								.getPreventiveMaintenance().split(",")[0])) {
+							description = vehicle.getVehicletype()
+									+ " : "
+									+ vehicle.getPlateNo()
+									+ " Preventive Maintenance Alert! Remaining Hours ="
+									+ nextMaintenanceHour / 60;
+							String mobile2 = null;
+							mobile2 = alertConfig.getSmsNumber();
+							Vehiclealerts va = new Vehiclealerts();
+							va.setAlerttype("PreventiveMaintenance");
+							va.setDescription(description);
+							va.setEventTimeStamp(vehi.getId()
+									.getEventTimeStamp());
+							va.setLatlng(vehi.getLatitude() + ","
+									+ vehi.getLongitude());
+							va.setSmsmobile(mobile2);
+							va.setVin(vin);
+							va.setShowstatus(false);
+							vehiclealerts.add(va);
+						}
+					}
+					// prevHour.put(vin, currentEngineRunHour);
+					// }
+				} catch (Exception e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+
+			}
+		}
+
+		if (!vehiclealerts.isEmpty()) {
+			lastUpdatedTime = alertsManager.persistVehicleAlert(alertConfig,
+					vehiclealerts, lastUpdatedTime);
+		}
+	}
+
+	@Override
+	public String manageAlerts(List<Vehicleevent> vehicleEvents, String vin,
+			String plateNo, List<VehicleHasIo> vehicleHasIo, int id,
+			VehicleComposite vehicleComposite) {
+		Vehicle vehicle = alertsEJBRemote.getVehicle(vin);
+		String description = null;
+		String type = vehicle.getVehicletype().getVehicleType();
+		boolean checkEngineHour = false;
+		Hourmeter hourmeter = null;
+		String totOdometer = null;
+		int currentEngineRunHour = 0;
+		boolean isAlreadyAlertSend = false;
+		String chkMaintenance = alertsEJBRemote.getPreferencesData(
+				"checkMaintenanace", vehicleComposite.getVehicle()
+						.getCompanyId());
+
+		List<Vehiclealerts> vehiclealerts = new ArrayList<Vehiclealerts>();
+		AlertsEJB.LOGGER.debug("Inside CheckPreventiveMaintenanceDue Alert ->");
+		for (Vehicleevent vehi : vehicleEvents) {
+			if (type.equalsIgnoreCase("DEEPSEA GENERATOR")) {
+				checkEngineHour = vehi.getIoevent() != null
+						&& !vehi.getIoevent().equalsIgnoreCase("{}");
+			} else {
+				if (chkMaintenance.equalsIgnoreCase("hours")) {
+					hourmeter = alertsEJBRemote.getHourMeter(vin);
+					if (hourmeter != null)
+						checkEngineHour = true;
+				} else if (chkMaintenance.equalsIgnoreCase("kilometer")) {
+					checkEngineHour = true;
+				}
+
+			}
+
+			if (checkEngineHour) {
+				// if (Preventive_Maintenance.get(vin) == null) {
+				// Preventive_Maintenance.put(vin,
+				// vehicle.getPreventiveMaintenance());
+				// }
+				try {
+					String strLastAlertDateTime = TimeZoneUtil
+							.getTimeINYYYYMMddss(lastUpdatedTime);
+					Date dateLastAlertDate = sdfDate
+							.parse(strLastAlertDateTime);
+					Date currenttimeStamp = vehi.getId().getEventTimeStamp();
+					long diff = currenttimeStamp.getTime()
+							- dateLastAlertDate.getTime();
+					long diffDays = diff / (12 * 60 * 60 * 1000);
+					if (diffDays == 0) {
+						isAlreadyAlertSend = true;
+					}
+					if (type.equalsIgnoreCase("DEEPSEA GENERATOR")) {
+						JSONObject ioevent = new JSONObject(vehi.getIoevent());
+						currentEngineRunHour = Integer.parseInt(ioevent.get(
+								"engineRunTime").toString()) / 60;
+					} else if (chkMaintenance.equalsIgnoreCase("hours")) {
+						currentEngineRunHour = Integer.parseInt(hourmeter
+								.getTotRunningDuration());
+					} else if (chkMaintenance.equalsIgnoreCase("kilometer")) {
+						currentEngineRunHour = (int) (((vehicle.getVOdometer() == null ? 0
+								: vehicle.getVOdometer()) + (vehi.getOdometer() == null ? 0
+								: vehi.getOdometer())) / 1000);
+					}
+
+					// if (prevHour.get(vin) == null
+					// || currentEngineRunHour > prevHour.get(vin)) {
+					MaintenancedueId maintenancedueId = new MaintenancedueId();
+					maintenancedueId.setVin(vin);
+					maintenancedueId
+							.setMaintenanceType("PreventiveMaintenance");
+					Maintenancedue maintenancedue = alertsEJBRemote
+							.getMaintanceDue(maintenancedueId);
+					if (maintenancedue == null) {
+						Maintenancedue maintenance = new Maintenancedue();
+						maintenance.setId(maintenancedueId);
+						maintenance.setLastMaintenanceHours(String
+								.valueOf(currentEngineRunHour));
+						maintenance.setTimeToNextMaintenance(vehicle
+								.getPreventiveMaintenance().split(",")[0]);
+						maintenance.setLastUpdDt(vehi.getId()
+								.getEventTimeStamp());
+						alertsEJBRemote.updateMaintenanceDue(maintenance,
+								"insert");
+					} else {
+						if (chkMaintenance.equalsIgnoreCase("kilometer")) {
+							int nextMaintenanceHour = Integer.parseInt(vehicle
+									.getPreventiveMaintenance().split(",")[0])
+									- (currentEngineRunHour - Integer
+											.parseInt(maintenancedue
+													.getLastMaintenanceHours()));
+							maintenancedue.setTimeToNextMaintenance(String
+									.valueOf(nextMaintenanceHour));
+							maintenancedue.setLastUpdDt(vehi.getId()
+									.getEventTimeStamp());
+							alertsEJBRemote.updateMaintenanceDue(
+									maintenancedue, "update");
+							if (!isAlreadyAlertSend) {
+								if (nextMaintenanceHour > 0 && nextMaintenanceHour <= Integer
+										.parseInt(vehicle
+												.getPreventiveMaintenance()
+												.split(",")[1])) {
+									description = vehicle.getVehicletype()
+											.getVehicleType()
+											+ " : "
+											+ vehicle.getPlateNo()
+											+ " Preventive Maintenance Alert! Remaining KiloMeter ="
+											+ nextMaintenanceHour;
+									String mobile2 = null;
+									mobile2 = alertConfig.getSmsNumber();
+									Vehiclealerts va = new Vehiclealerts();
+									va.setAlerttype("PreventiveMaintenance");
+									va.setDescription(description);
+									va.setEventTimeStamp(vehi.getId()
+											.getEventTimeStamp());
+									va.setLatlng(vehi.getLatitude() + ","
+											+ vehi.getLongitude());
+									va.setSmsmobile(mobile2);
+									va.setVin(vin);
+									va.setShowstatus(false);
+									vehiclealerts.add(va);
+								} else if (nextMaintenanceHour <= 0) {
+									description = vehicle.getVehicletype()
+											.getVehicleType()
+											+ " : "
+											+ vehicle.getPlateNo()
+											+ " Preventive Maintenance Alert! Your vehicle crossed your maintenance limit ! Please service your vehicle.";
+									String mobile2 = null;
+									mobile2 = alertConfig.getSmsNumber();
+									Vehiclealerts va = new Vehiclealerts();
+									va.setAlerttype("PreventiveMaintenance");
+									va.setDescription(description);
+									va.setEventTimeStamp(vehi.getId()
+											.getEventTimeStamp());
+									va.setLatlng(vehi.getLatitude() + ","
+											+ vehi.getLongitude());
+									va.setSmsmobile(mobile2);
+									va.setVin(vin);
+									va.setShowstatus(false);
+									vehiclealerts.add(va);
+								}
+							}
+						} else {
+							int nextMaintenanceHour = Integer.parseInt(vehicle
+									.getPreventiveMaintenance().split(",")[0])
+									- (currentEngineRunHour - Integer
+											.parseInt(maintenancedue
+													.getLastMaintenanceHours()));
+							maintenancedue.setTimeToNextMaintenance(String
+									.valueOf(nextMaintenanceHour));
+							maintenancedue.setLastUpdDt(vehi.getId()
+									.getEventTimeStamp());
+							alertsEJBRemote.updateMaintenanceDue(
+									maintenancedue, "update");
+							if (nextMaintenanceHour == Integer.parseInt(vehicle
+									.getPreventiveMaintenance().split(",")[1])) {
+								description = vehicle.getVehicletype()
+										.getVehicleType()
+										+ " : "
+										+ vehicle.getPlateNo()
+										+ " Preventive Maintenance Alert! Remaining Hours ="
+										+ nextMaintenanceHour / 60;
+								String mobile2 = null;
+								mobile2 = alertConfig.getSmsNumber();
+								Vehiclealerts va = new Vehiclealerts();
+								va.setAlerttype("PreventiveMaintenance");
+								va.setDescription(description);
+								va.setEventTimeStamp(vehi.getId()
+										.getEventTimeStamp());
+								va.setLatlng(vehi.getLatitude() + ","
+										+ vehi.getLongitude());
+								va.setSmsmobile(mobile2);
+								va.setVin(vin);
+								va.setShowstatus(false);
+								vehiclealerts.add(va);
+							}
+						}
+					}
+					// prevHour.put(vin, currentEngineRunHour);
+					// }
+				} catch (Exception e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+
+			}
+		}
+
+		if (!vehiclealerts.isEmpty()) {
+			lastUpdatedTime = alertsManager.persistVehicleAlert(alertConfig,
+					vehiclealerts, lastUpdatedTime);
+		}
+
+		return null;
+	}
+
+	@Override
+	public void addAlertManager(AlertsManager alertsManager) {
+		this.alertsManager = alertsManager;
+		this.alertsEJBRemote = alertsManager.alertsEJBRemote;
+	}
+
+	@Override
+	public void setLastUpdatedTime(Date lastUpdated) {
+		// TODO Auto-generated method stub
+
+	}
+
+	@Override
+	public String manageHbAlerts(Heartbeatevent heartbeatevent, String vin,
+			String PlateNo, VehicleComposite vehicleComposite) {
+		// TODO Auto-generated method stub
+		return null;
+	}
+}

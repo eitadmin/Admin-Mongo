@@ -1,0 +1,127 @@
+package com.eiw.device.handler;
+
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.net.SocketTimeoutException;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+
+import org.jboss.logging.Logger;
+
+import com.eiw.device.ejb.FleetTrackingDeviceListenerBORemote;
+import com.eiw.device.ejb.VehicleComposite;
+import com.eiw.device.upsivetel.UpsIvetelByteWrapper;
+import com.eiw.server.TimeZoneUtil;
+import com.eiw.server.bo.BOFactory;
+import com.eiw.server.fleettrackingpu.Vehicle;
+import com.eiw.server.fleettrackingpu.Vehicleevent;
+import com.eiw.server.fleettrackingpu.VehicleeventId;
+
+public class UpsIvetelDeviceHandler extends DeviceHandler {
+	private static final Logger LOGGER = Logger.getLogger("listener");
+	FleetTrackingDeviceListenerBORemote fleetTrackingDeviceListenerBO = BOFactory
+			.getFleetTrackingDeviceListenerBORemote();
+
+	@Override
+	protected void handleDevice() {
+		LOGGER.info("Entered UPS five mins Handle Device:" + new Date());
+		DataInputStream clientSocketDis = null;
+		DataOutputStream dos = null;
+		try {
+			clientSocket.setSoTimeout(1500000);
+			clientSocketDis = new DataInputStream(clientSocket.getInputStream());
+			UpsIvetelByteWrapper data = new UpsIvetelByteWrapper(
+					clientSocketDis);
+			data.unwrapDataFromStream();
+			LOGGER.info("Test 1 UPS Ivetel");
+			String imeiNo = data.getImei();
+			VehicleComposite vehicleComposite = fleetTrackingDeviceListenerBO
+					.getVehicle(imeiNo);
+			if (vehicleComposite == null) {
+				LOGGER.error("UpsIvetelDeviceHandler: handleDevice: Received IMEI No is invalid... returning... "
+						+ imeiNo);
+				return;
+			}
+			super.deviceImei = imeiNo;
+			LOGGER.info("Test 2:" + super.deviceImei);
+			insertService(data, vehicleComposite, fleetTrackingDeviceListenerBO);
+			while (true) {
+				UpsIvetelByteWrapper rawData = new UpsIvetelByteWrapper(
+						clientSocketDis);
+				rawData.unwrapDataFromStream();
+				insertService(rawData, vehicleComposite,
+						fleetTrackingDeviceListenerBO);
+			}
+		} catch (SocketTimeoutException e) {
+			LOGGER.error("SocketTimeoutException while receiving the Message "
+					+ e);
+		} catch (Exception e) {
+			LOGGER.error("UpsIvetelDeviceHandler:Exception while receiving the Message "
+					+ e);
+		} finally {
+			cleanUpSockets(clientSocket, clientSocketDis, dos);
+			LOGGER.info("DeviceCommunicatorThread:DeviceCommunicator Completed");
+		}
+		LOGGER.info("UpsIvetelDeviceHandler: Ended successfully::: ");
+	}
+
+	private void insertService(UpsIvetelByteWrapper rawData,
+			VehicleComposite vehicleComposite,
+			FleetTrackingDeviceListenerBORemote fleetTrackingDeviceListenerBO) {
+		try {
+			Vehicle vehicle = vehicleComposite.getVehicle();
+			List<Vehicleevent> vehicleEvent = prepareVehicleEvents(vehicle,
+					rawData, fleetTrackingDeviceListenerBO);
+			LOGGER.info("UpsIvetelDeviceProtocolHandler: handleDevice: VehicleEvents prepared for vin="
+					+ vehicleEvent.get(0).getId().getVin()
+					+ " at "
+					+ new Date());
+			fleetTrackingDeviceListenerBO.persistDeviceData(vehicleEvent,
+					vehicleComposite);
+		} catch (Exception e) {
+			LOGGER.error("Exception while persisting data :: " + e);
+		}
+	}
+
+	private List<Vehicleevent> prepareVehicleEvents(Vehicle vehicle,
+			UpsIvetelByteWrapper avlData,
+			FleetTrackingDeviceListenerBORemote entityManagerService) {
+		List<Vehicleevent> vehicleEvents = new ArrayList<Vehicleevent>();
+		try {
+			String region = entityManagerService.getTimeZoneRegion(vehicle
+					.getVin());
+			Vehicleevent ve = entityManagerService.getPrevVe(vehicle.getVin());
+			VehicleeventId vehicleeventId = new VehicleeventId();
+			Vehicleevent vehicleEvent = new Vehicleevent();
+			vehicleeventId.setEventTimeStamp(TimeZoneUtil.getDateTimeZone(
+					avlData.getUpsIvetelData().getDateTime(), region));
+			vehicleEvent.setServerTimeStamp(TimeZoneUtil.getDateInTimeZone());
+			vehicleEvent.setLatitude(Double.valueOf("13.002"));
+			vehicleEvent.setLongitude(Double.valueOf("80.34"));
+			vehicleEvent.setSpeed(0);
+			vehicleeventId.setVin(vehicle.getVin());
+			vehicleEvent.setId(vehicleeventId);
+			vehicleEvent.setEngine(false);
+			String upsEvents = "1=" + avlData.getUpsIvetelData().getFwVersion()
+					+ ",2=" + avlData.getUpsIvetelData().getDeviceModel()
+					+ ",3=" + avlData.getUpsIvetelData().getSdkVersion()
+					+ ",4=" + avlData.getUpsIvetelData().getPacketId() + ",5="
+					+ avlData.getUpsIvetelData().getSignalStrength() + ",6="
+					+ avlData.getUpsIvetelData().getIpVoltage() + ",7="
+					+ avlData.getUpsIvetelData().getIpFaultVolt() + ",8="
+					+ avlData.getUpsIvetelData().getOpVoltage() + ",9="
+					+ avlData.getUpsIvetelData().getOpCurrent() + ",10="
+					+ avlData.getUpsIvetelData().getIpFrequency() + ",11="
+					+ avlData.getUpsIvetelData().getUpsBatVoltage() + ",12="
+					+ avlData.getUpsIvetelData().getTemperature() + ",13="
+					+ avlData.getUpsIvetelData().getDeviceBatVoltage();
+			vehicleEvent.setTags(upsEvents);
+			vehicleEvents.add(vehicleEvent);
+		} catch (Exception e) {
+			LOGGER.error("UpsIvetelDeviceProtocolHandler: PreparevehicleEvents:"
+					+ e);
+		}
+		return vehicleEvents;
+	}
+}

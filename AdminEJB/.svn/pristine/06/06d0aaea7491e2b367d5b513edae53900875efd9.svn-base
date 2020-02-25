@@ -1,0 +1,1485 @@
+package com.eiw.client.dto;
+
+import java.util.List;
+import java.util.Map;
+import java.util.SortedMap;
+
+public class VehicleData implements java.io.Serializable {
+
+	private String vin;
+	private String plateNo;
+	private double latitude;
+	private double longitude;
+	private String warrantyExpiryDate;
+	private String dateOfPurchase;
+	private String insuranceExpiryDate;
+	private float warrantyPeriodYear;
+	private String userEmailAddress;
+	private String operatorID;
+	private String operatorName;
+	private String contactNo;
+	private String imeiNo;
+	private int rowNum;
+	private int speed;
+	private float fuel;
+	private String status;
+	private String icon;
+	private String timeStamp;
+	private String alertStatus;
+	private String alertTimeStamp;
+	private String alertDay;
+	private String description;
+	private String htmlDescription;
+	private String htmlVehicleNo;
+	private String trip;
+	private String source;
+	private String destination;
+	private String startDate;
+	private String endDate;
+	private String lastUpdUser;
+	private String lastUpdDate;
+	private String type;
+	private String model;
+	private List<String> alerts;
+	private String gsmSignalStrength;
+	private String powerSupplyVoltage;
+	private String batteryvoltage;
+	private String batteryCurrent;
+	private String currentProfile;
+	private String analogInput1;
+	private String analogInput2;
+	private String analogInput3;
+	private String analogInput4;
+	private int aimv1;
+	private int aimv2;
+	private int aimv3;
+	private int aimv4;
+	private int direction;
+	private String digitalInput1;
+	private String digitalinput2;
+	private String digitalInput3;
+	private String digitalInput4;
+	private String engineId;
+	private String vehicleType;
+	private String regNo;
+	private String regDate;
+	private String regExpDate;
+	private String insuNo;
+	private String opeArea;
+	private String mileageInit;
+	private String mileageCurrent;
+	private String vehicleModel;
+	private String make;
+	private String createdDate;
+	private String formDate;
+	private String toDate;
+	private String subject;
+	private String content;
+	private String smsReminder;
+	private String phoneNo;
+	private String eventStatus;
+	private String count;
+	private Map<String, String> hashMap;
+	private String additionalWarranty;
+	private String tripDate;
+	private String ioEvent;
+	private String listBoxVin;
+	private String group;
+	private String maxSpeed;
+	private String minSpeed;
+	private String avgSpeed;
+	private String companyId;
+	private String branchId;
+	private long eventId;
+	private String maintenanceType;
+	private String fleetManager;
+	private String imageUrl;
+	private String operatorImage;
+	private String range;
+	private String interval;
+	private String through;
+	private String throughSms;
+	private String throughEmail;
+	private String smsNumber;
+	private String emailAddress;
+	private String calEventId;
+	private SortedMap<String, String> sortedHashMap;
+	private String fuelTanklit;
+	private String fuelTankmV;
+	private String ioDetails;
+	private List<String> users;
+	private double latitudeStart;
+	private double longitudeStart;
+	private String temp1Max;
+	private String temp1Min;
+	private String temp1Avg;
+	private String temp2Max;
+	private String temp2Min;
+	private String temp2Avg;
+	private String temp3Max;
+	private String temp3Min;
+	private String temp3Avg;
+	private String batVoltMax;
+	private String batVoltMin;
+	private String batVoltAvg;
+	private String runDuration;
+	private String stopDuration;
+	private String distTrav;
+	private String noOfStops;
+	private String geozoneVio;
+	private String overSpeedVio;
+	private String totAlertSent;
+	private String odometer;
+	private String idleStop;
+	private int mv;
+	private float lit;
+	private Map<Integer, Float> hashMapVd;
+	private String serialNo;
+	private String brand;
+	private String cost;
+	private String position;
+	private String finalOdometer;
+	private boolean chkStatus;
+	private Map<String, String> fmsHashMap;
+	private String can0;
+	private String can1;
+	private String can2;
+	private String can3;
+	private String can4;
+	private String can5;
+	private String can6;
+	private String can7;
+	private String can8;
+	private String can9;
+	private String canId;
+	private String canName;
+	private String canDesc;
+	private String outputMask;
+	private List<IOData> ioDatas;
+	private String harshBraking;
+	private String extremeBraking;
+	private String corneringLimit;
+	private int lockstatus;
+	private int obdFuelLevel;
+	private int obdVehicleSpeed;
+	private int obdECT;
+	private int obdDistance;
+	private float obdEFR;
+	private float obdRPM;
+	private int obdAmbientTemp;
+	private boolean gps;
+	private Map<String, String> canbus;
+
+	public Map<String, String> getCanbus() {
+		return canbus;
+	}
+
+	public void setCanbus(Map<String, String> canbus) {
+		this.canbus = canbus;
+	}
+
+	public boolean getGps() {
+		return gps;
+	}
+
+	public void setGps(boolean gps) {
+		this.gps = gps;
+	}
+
+	public String getPlateNo() {
+		return plateNo;
+	}
+
+	public void setPlateNo(String plateNo) {
+		this.plateNo = plateNo;
+	}
+
+	public String getVin() {
+		return vin;
+	}
+
+	public void setVin(String vin) {
+		this.vin = vin;
+	}
+
+	public double getLatitude() {
+		return latitude;
+	}
+
+	public void setLatitude(double latitude) {
+		this.latitude = latitude;
+	}
+
+	public double getLongitude() {
+		return longitude;
+	}
+
+	public void setLongitude(double longitude) {
+		this.longitude = longitude;
+	}
+
+	public String getWarrantyExpiryDate() {
+		return warrantyExpiryDate;
+	}
+
+	public void setWarrantyExpiryDate(String warrantyExpiryDate) {
+		this.warrantyExpiryDate = warrantyExpiryDate;
+	}
+
+	public String getDateOfPurchase() {
+		return dateOfPurchase;
+	}
+
+	public void setDateOfPurchase(String dateOfPurchase) {
+		this.dateOfPurchase = dateOfPurchase;
+	}
+
+	public String getInsuranceExpiryDate() {
+		return insuranceExpiryDate;
+	}
+
+	public void setInsuranceExpiryDate(String insuranceExpiryDate) {
+		this.insuranceExpiryDate = insuranceExpiryDate;
+	}
+
+	public float getWarrantyPeriodYear() {
+		return warrantyPeriodYear;
+	}
+
+	public void setWarrantyPeriodYear(float warrantyPeriodYear) {
+		this.warrantyPeriodYear = warrantyPeriodYear;
+	}
+
+	public String getOperatorID() {
+		return operatorID;
+	}
+
+	public void setOperatorID(String operatorID) {
+		this.operatorID = operatorID;
+	}
+
+	public String getOperatorName() {
+		return operatorName;
+	}
+
+	public void setOperatorName(String operatorName) {
+		this.operatorName = operatorName;
+	}
+
+	public String getContactNo() {
+		return contactNo;
+	}
+
+	public void setContactNo(String contactNo) {
+		this.contactNo = contactNo;
+	}
+
+	public String getUserEmailAddress() {
+		return userEmailAddress;
+	}
+
+	public void setUserEmailAddress(String userEmailAddress) {
+		this.userEmailAddress = userEmailAddress;
+	}
+
+	public String getImeiNo() {
+		return imeiNo;
+	}
+
+	public void setImeiNo(String imeiNo) {
+		this.imeiNo = imeiNo;
+	}
+
+	public int getRowNum() {
+		return rowNum;
+	}
+
+	public void setRowNum(int rowNum) {
+		this.rowNum = rowNum;
+	}
+
+	public int getSpeed() {
+		return speed;
+	}
+
+	public void setSpeed(int speed) {
+		this.speed = speed;
+	}
+
+	public String getStatus() {
+		return status;
+	}
+
+	public void setStatus(String status) {
+		this.status = status;
+	}
+
+	public float getFuel() {
+		return fuel;
+	}
+
+	public void setFuel(float fuel) {
+		this.fuel = fuel;
+	}
+
+	public String getIcon() {
+		return icon;
+	}
+
+	public void setIcon(String icon) {
+		this.icon = icon;
+	}
+
+	public String getTimeStamp() {
+		return timeStamp;
+	}
+
+	public void setTimeStamp(String timeStamp) {
+		this.timeStamp = timeStamp;
+	}
+
+	public String getAlertTypes() {
+		return alertStatus;
+	}
+
+	public void setAlertTypes(String alertStatus) {
+		this.alertStatus = alertStatus;
+	}
+
+	public String getAlertTime() {
+		return alertTimeStamp;
+	}
+
+	public void setAlertTime(String alertTimeStamp) {
+		this.alertTimeStamp = alertTimeStamp;
+	}
+
+	public String getDescription() {
+		return description;
+	}
+
+	public void setDescription(String description) {
+		this.description = description;
+	}
+
+	public String getHtmlDescription() {
+		return htmlDescription;
+	}
+
+	public void setHtmlDescription(String htmlDescription) {
+		this.htmlDescription = htmlDescription;
+	}
+
+	public String getHtmlVehicleNo() {
+		return htmlVehicleNo;
+	}
+
+	public void setHtmlVehicleNo(String htmlVehicleNo) {
+		this.htmlVehicleNo = htmlVehicleNo;
+	}
+
+	public String getTrip() {
+		return trip;
+	}
+
+	public void setTrip(String trip) {
+		this.trip = trip;
+	}
+
+	public String getSource() {
+		return source;
+	}
+
+	public void setSource(String source) {
+		this.source = source;
+	}
+
+	public String getDestination() {
+		return destination;
+	}
+
+	public void setDestination(String destination) {
+		this.destination = destination;
+	}
+
+	public String getStartDate() {
+		return startDate;
+	}
+
+	public void setStartDate(String startDate) {
+		this.startDate = startDate;
+	}
+
+	public String getEndDate() {
+		return endDate;
+	}
+
+	public void setEndDate(String endDate) {
+		this.endDate = endDate;
+	}
+
+	public String getLastUpdDate() {
+		return lastUpdDate;
+	}
+
+	public void setLastUpdDate(String lastUpdDate) {
+		this.lastUpdDate = lastUpdDate;
+	}
+
+	public String getLastUpdUser() {
+		return lastUpdUser;
+	}
+
+	public void setLastUpdUser(String lastUpdUser) {
+		this.lastUpdUser = lastUpdUser;
+	}
+
+	public String getType() {
+		return type;
+	}
+
+	public void setType(String type) {
+		this.type = type;
+	}
+
+	public String getModel() {
+		return model;
+	}
+
+	public void setModel(String model) {
+		this.model = model;
+	}
+
+	public List<String> getAlerts() {
+		return alerts;
+	}
+
+	public void setAlerts(List<String> alerts) {
+		this.alerts = alerts;
+	}
+
+	public String getGsmSignalStrength() {
+		return gsmSignalStrength;
+	}
+
+	public void setGsmSignalStrength(String gsmSignalStrength) {
+		this.gsmSignalStrength = gsmSignalStrength;
+	}
+
+	public String getPowerSupplyVoltage() {
+		return powerSupplyVoltage;
+	}
+
+	public void setPowerSupplyVoltage(String powerSupplyVoltage) {
+		this.powerSupplyVoltage = powerSupplyVoltage;
+	}
+
+	public String getBatteryvoltage() {
+		return batteryvoltage;
+	}
+
+	public void setBatteryvoltage(String batteryvoltage) {
+		this.batteryvoltage = batteryvoltage;
+	}
+
+	public String getBatteryCurrent() {
+		return batteryCurrent;
+	}
+
+	public void setBatteryCurrent(String batteryCurrent) {
+		this.batteryCurrent = batteryCurrent;
+	}
+
+	public String getCurrentProfile() {
+		return currentProfile;
+	}
+
+	public void setCurrentProfile(String currentProfile) {
+		this.currentProfile = currentProfile;
+	}
+
+	public String getAnalogInput1() {
+		return analogInput1;
+	}
+
+	public void setAnalogInput1(String analogInput1) {
+		this.analogInput1 = analogInput1;
+	}
+
+	public String getEngineId() {
+		return engineId;
+	}
+
+	public void setEngineId(String engineId) {
+		this.engineId = engineId;
+	}
+
+	public String getVehicleType() {
+		return vehicleType;
+	}
+
+	public void setVehicleType(String vehicleType) {
+		this.vehicleType = vehicleType;
+	}
+
+	public String getRegNo() {
+		return regNo;
+	}
+
+	public void setRegNo(String regNo) {
+		this.regNo = regNo;
+	}
+
+	public String getInsuNo() {
+		return insuNo;
+	}
+
+	public void setInsuNo(String insuNo) {
+		this.insuNo = insuNo;
+	}
+
+	public String getOpeArea() {
+		return opeArea;
+	}
+
+	public void setOpeArea(String opeArea) {
+		this.opeArea = opeArea;
+	}
+
+	public String getMileageInit() {
+		return mileageInit;
+	}
+
+	public void setMileageInit(String mileageInit) {
+		this.mileageInit = mileageInit;
+	}
+
+	public String getMileageCurrent() {
+		return mileageCurrent;
+	}
+
+	public void setMileageCurrent(String mileageCurrent) {
+		this.mileageCurrent = mileageCurrent;
+	}
+
+	public String getRegDate() {
+		return regDate;
+	}
+
+	public void setRegDate(String regDate) {
+		this.regDate = regDate;
+	}
+
+	public String getRegExpDate() {
+		return regExpDate;
+	}
+
+	public void setRegExpDate(String regExpDate) {
+		this.regExpDate = regExpDate;
+	}
+
+	public String getVehicleModel() {
+		return vehicleModel;
+	}
+
+	public void setVehicleModel(String vehicleModel) {
+		this.vehicleModel = vehicleModel;
+	}
+
+	public String getMake() {
+		return make;
+	}
+
+	public void setMake(String make) {
+		this.make = make;
+	}
+
+	public String getSubject() {
+		return subject;
+	}
+
+	public void setSubject(String subject) {
+		this.subject = subject;
+	}
+
+	public String getContent() {
+		return content;
+	}
+
+	public void setContent(String content) {
+		this.content = content;
+	}
+
+	public String getSmsReminder() {
+		return smsReminder;
+	}
+
+	public void setSmsReminder(String smsReminder) {
+		this.smsReminder = smsReminder;
+	}
+
+	public String getPhoneNo() {
+		return phoneNo;
+	}
+
+	public void setPhoneNo(String phoneNo) {
+		this.phoneNo = phoneNo;
+	}
+
+	public String getEventStatus() {
+		return eventStatus;
+	}
+
+	public void setEventStatus(String eventStatus) {
+		this.eventStatus = eventStatus;
+	}
+
+	public String getCreatedDate() {
+		return createdDate;
+	}
+
+	public void setCreatedDate(String createdDate) {
+		this.createdDate = createdDate;
+	}
+
+	public String getfromDate() {
+		return formDate;
+	}
+
+	public void setfromDate(String formDate) {
+		this.formDate = formDate;
+	}
+
+	public String getToDate() {
+		return toDate;
+	}
+
+	public void setToDate(String toDate) {
+		this.toDate = toDate;
+	}
+
+	public String getCount() {
+		return count;
+	}
+
+	public void setCount(String count) {
+		this.count = count;
+	}
+
+	public Map<String, String> getHashMap() {
+		return hashMap;
+	}
+
+	public void setHashMap(Map<String, String> hashMap) {
+		this.hashMap = hashMap;
+	}
+
+	public String getAdditionalWarranty() {
+		return additionalWarranty;
+	}
+
+	public void setAdditionalWarranty(String additionalWarranty) {
+		this.additionalWarranty = additionalWarranty;
+	}
+
+	public String getTripDate() {
+		return tripDate;
+	}
+
+	public void setTripDate(String tripDate) {
+		this.tripDate = tripDate;
+	}
+
+	public String getIoEvent() {
+		return ioEvent;
+	}
+
+	public void setIoEvent(String ioEvent) {
+		this.ioEvent = ioEvent;
+	}
+
+	public String getListBoxVin() {
+		return listBoxVin;
+	}
+
+	public void setListBoxVin(String listBoxVin) {
+		this.listBoxVin = listBoxVin;
+	}
+
+	public String getGroup() {
+		return group;
+	}
+
+	public void setGroup(String group) {
+		this.group = group;
+	}
+
+	public String getMinSpeed() {
+		return minSpeed;
+	}
+
+	public void setMinSpeed(String minSpeed) {
+		this.minSpeed = minSpeed;
+	}
+
+	public String getMaxSpeed() {
+		return maxSpeed;
+	}
+
+	public void setMaxSpeed(String maxSpeed) {
+		this.maxSpeed = maxSpeed;
+	}
+
+	public String getAvgSpeed() {
+		return avgSpeed;
+	}
+
+	public void setAvgSpeed(String avgSpeed) {
+		this.avgSpeed = avgSpeed;
+	}
+
+	public String getCompanyId() {
+		return companyId;
+	}
+
+	public void setCompanyId(String companyId) {
+		this.companyId = companyId;
+	}
+
+	public String getBranchId() {
+		return branchId;
+	}
+
+	public void setBranchId(String branchId) {
+		this.branchId = branchId;
+	}
+
+	public long getEventId() {
+		return eventId;
+	}
+
+	public void setEventId(long eventId) {
+		this.eventId = eventId;
+	}
+
+	public String getMaintenanceType() {
+		return maintenanceType;
+	}
+
+	public void setMaintenanceType(String maintenanceType) {
+		this.maintenanceType = maintenanceType;
+	}
+
+	public String getFleetManager() {
+		return fleetManager;
+	}
+
+	public void setFleetManager(String fleetManager) {
+		this.fleetManager = fleetManager;
+	}
+
+	public String getImageUrl() {
+		return imageUrl;
+	}
+
+	public void setImageUrl(String imageUrl) {
+		this.imageUrl = imageUrl;
+	}
+
+	public String getOperatorImage() {
+		return operatorImage;
+	}
+
+	public void setOperatorImage(String operatorImage) {
+		this.operatorImage = operatorImage;
+	}
+
+	public String getRange() {
+		return range;
+	}
+
+	public void setRange(String range) {
+		this.range = range;
+	}
+
+	public String getInterval() {
+		return interval;
+	}
+
+	public void setInterval(String interval) {
+		this.interval = interval;
+	}
+
+	public String getThrough() {
+		return through;
+	}
+
+	public void setThrough(String through) {
+		this.through = through;
+	}
+
+	public String getThroughSms() {
+		return throughSms;
+	}
+
+	public void setThroughSms(String throughSms) {
+		this.throughSms = throughSms;
+	}
+
+	public String getThroughEmail() {
+		return throughEmail;
+	}
+
+	public void setThroughEmail(String throughEmail) {
+		this.throughEmail = throughEmail;
+	}
+
+	public String getSmsNumber() {
+		return smsNumber;
+	}
+
+	public void setSmsNumber(String smsNumber) {
+		this.smsNumber = smsNumber;
+	}
+
+	public String getEmailAddress() {
+		return emailAddress;
+	}
+
+	public void setEmailAddress(String emailAddress) {
+		this.emailAddress = emailAddress;
+	}
+
+	public String getCalEventId() {
+		return calEventId;
+	}
+
+	public void setCalEventId(String calEventId) {
+		this.calEventId = calEventId;
+	}
+
+	public SortedMap<String, String> getSortHashMap() {
+		return sortedHashMap;
+	}
+
+	public void setSortHashMap(SortedMap<String, String> hashMap) {
+		this.sortedHashMap = hashMap;
+	}
+
+	public String getFuelTanklit() {
+		return fuelTanklit;
+	}
+
+	public void setFuelTanklit(String fuelTanklit) {
+		this.fuelTanklit = fuelTanklit;
+	}
+
+	public String getFuelTankmV() {
+		return fuelTankmV;
+	}
+
+	public void setFuelTankmV(String fuelTankmV) {
+		this.fuelTankmV = fuelTankmV;
+	}
+
+	public String getIoDetails() {
+		return ioDetails;
+	}
+
+	public void setIoDetails(String ioDetails) {
+		this.ioDetails = ioDetails;
+	}
+
+	public String getAnalogInput2() {
+		return analogInput2;
+	}
+
+	public void setAnalogInput2(String analogInput2) {
+		this.analogInput2 = analogInput2;
+	}
+
+	public String getDigitalInput1() {
+		return digitalInput1;
+	}
+
+	public void setDigitalInput1(String digitalInput1) {
+		this.digitalInput1 = digitalInput1;
+	}
+
+	public String getDigitalInput2() {
+		return digitalinput2;
+	}
+
+	public void setDigitalInput2(String digitalinput2) {
+		this.digitalinput2 = digitalinput2;
+	}
+
+	public List<String> getUsers() {
+		return users;
+	}
+
+	public void setUsers(List<String> users) {
+		this.users = users;
+	}
+
+	public double getLatitudeStart() {
+		return latitudeStart;
+	}
+
+	public void setLatitudeStart(double latitudeStart) {
+		this.latitudeStart = latitudeStart;
+	}
+
+	public double getLongitudeStart() {
+		return longitudeStart;
+	}
+
+	public void setLongitudeStart(double longitudeStart) {
+		this.longitudeStart = longitudeStart;
+	}
+
+	public String getTemp1Max() {
+		return temp1Max;
+	}
+
+	public void setTemp1Max(String temp1Max) {
+		this.temp1Max = temp1Max;
+	}
+
+	public String getTemp1Min() {
+		return temp1Min;
+	}
+
+	public void setTemp1Min(String temp1Min) {
+		this.temp1Min = temp1Min;
+	}
+
+	public String getTemp1Avg() {
+		return temp1Avg;
+	}
+
+	public void setTemp1Avg(String temp1Avg) {
+		this.temp1Avg = temp1Avg;
+	}
+
+	public String getTemp2Max() {
+		return temp2Max;
+	}
+
+	public void setTemp2Max(String temp2Max) {
+		this.temp2Max = temp2Max;
+	}
+
+	public String getTemp2Min() {
+		return temp2Min;
+	}
+
+	public void setTemp2Min(String temp2Min) {
+		this.temp2Min = temp2Min;
+	}
+
+	public String getTemp2Avg() {
+		return temp2Avg;
+	}
+
+	public void setTemp2Avg(String temp2Avg) {
+		this.temp2Avg = temp2Avg;
+	}
+
+	public String getTemp3Max() {
+		return temp3Max;
+	}
+
+	public void setTemp3Max(String temp3Max) {
+		this.temp3Max = temp3Max;
+	}
+
+	public String getTemp3Min() {
+		return temp3Min;
+	}
+
+	public void setTemp3Min(String temp3Min) {
+		this.temp3Min = temp3Min;
+	}
+
+	public String getTemp3Avg() {
+		return temp3Avg;
+	}
+
+	public void setTemp3Avg(String temp3Avg) {
+		this.temp3Avg = temp3Avg;
+	}
+
+	public String getBatVoltMax() {
+		return batVoltMax;
+	}
+
+	public void setBatVoltMax(String batVoltMax) {
+		this.batVoltMax = batVoltMax;
+	}
+
+	public String getBatVoltMin() {
+		return batVoltMin;
+	}
+
+	public void setBatVoltMin(String batVoltMin) {
+		this.batVoltMin = batVoltMin;
+	}
+
+	public String getBatVoltAvg() {
+		return batVoltAvg;
+	}
+
+	public void setBatVoltAvg(String batVoltAvg) {
+		this.batVoltAvg = batVoltAvg;
+	}
+
+	public String getRunDuration() {
+		return runDuration;
+	}
+
+	public void setRunDuration(String runDuration) {
+		this.runDuration = runDuration;
+	}
+
+	public String getStopDuration() {
+		return stopDuration;
+	}
+
+	public void setStopDuration(String stopDuration) {
+		this.stopDuration = stopDuration;
+	}
+
+	public String getDistTrav() {
+		return distTrav;
+	}
+
+	public void setDistTrav(String distTrav) {
+		this.distTrav = distTrav;
+	}
+
+	public String getNoOfStops() {
+		return noOfStops;
+	}
+
+	public void setNoOfStops(String noOfStops) {
+		this.noOfStops = noOfStops;
+	}
+
+	public String getGeozoneVio() {
+		return geozoneVio;
+	}
+
+	public void setGeozoneVio(String geozoneVio) {
+		this.geozoneVio = geozoneVio;
+	}
+
+	public String getOverSpeedVio() {
+		return overSpeedVio;
+	}
+
+	public void setOverSpeedVio(String overSpeedVio) {
+		this.overSpeedVio = overSpeedVio;
+	}
+
+	public String getTotAlertSent() {
+		return totAlertSent;
+	}
+
+	public void setTotAlertSent(String totAlertSent) {
+		this.totAlertSent = totAlertSent;
+	}
+
+	public String getOdometer() {
+		return odometer;
+	}
+
+	public void setOdometer(String odometer) {
+		this.odometer = odometer;
+	}
+
+	public String getIdleStop() {
+		return idleStop;
+	}
+
+	public void setIdleStop(String idleStop) {
+		this.idleStop = idleStop;
+	}
+
+	public Map<Integer, Float> getHashMapVd() {
+		return hashMapVd;
+	}
+
+	public void setHashMapVd(Map<Integer, Float> hashMapVd) {
+		this.hashMapVd = hashMapVd;
+	}
+
+	public float getLit() {
+		return lit;
+	}
+
+	public void setLit(float lit) {
+		this.lit = lit;
+	}
+
+	public int getMv() {
+		return mv;
+	}
+
+	public void setMv(int mv) {
+		this.mv = mv;
+	}
+
+	public String getSerialNo() {
+		return serialNo;
+	}
+
+	public void setSerialNo(String serialNo) {
+		this.serialNo = serialNo;
+	}
+
+	public String getBrand() {
+		return brand;
+	}
+
+	public void setBrand(String brand) {
+		this.brand = brand;
+	}
+
+	public String getCost() {
+		return cost;
+	}
+
+	public void setCost(String cost) {
+		this.cost = cost;
+	}
+
+	public String getPosition() {
+		return position;
+	}
+
+	public void setPosition(String position) {
+		this.position = position;
+	}
+
+	public String getFinalOdometer() {
+		return finalOdometer;
+	}
+
+	public void setFinalOdometer(String finalOdometer) {
+		this.finalOdometer = finalOdometer;
+	}
+
+	public boolean getChkStatus() {
+		return chkStatus;
+	}
+
+	public void setChkStatus(boolean chkStatus) {
+		this.chkStatus = chkStatus;
+	}
+
+	public Map<String, String> getFmsHashMap() {
+		return fmsHashMap;
+	}
+
+	public void setFmsHashMap(Map<String, String> fmsHashMap) {
+		this.fmsHashMap = fmsHashMap;
+	}
+
+	public String getCan1() {
+		return can1;
+	}
+
+	public void setCan1(String can1) {
+		this.can1 = can1;
+	}
+
+	public String getCan2() {
+		return can2;
+	}
+
+	public void setCan2(String can2) {
+		this.can2 = can2;
+	}
+
+	public String getCan3() {
+		return can3;
+	}
+
+	public void setCan3(String can3) {
+		this.can3 = can3;
+	}
+
+	public String getCan4() {
+		return can4;
+	}
+
+	public void setCan4(String can4) {
+		this.can4 = can4;
+	}
+
+	public String getCan5() {
+		return can5;
+	}
+
+	public void setCan5(String can5) {
+		this.can5 = can5;
+	}
+
+	public String getCan6() {
+		return can6;
+	}
+
+	public void setCan6(String can6) {
+		this.can6 = can6;
+	}
+
+	public String getCan7() {
+		return can7;
+	}
+
+	public void setCan7(String can7) {
+		this.can7 = can7;
+	}
+
+	public String getCan8() {
+		return can8;
+	}
+
+	public void setCan8(String can8) {
+		this.can8 = can8;
+	}
+
+	public String getCan9() {
+		return can9;
+	}
+
+	public void setCan9(String can9) {
+		this.can9 = can9;
+	}
+
+	public String getCan0() {
+		return can0;
+	}
+
+	public void setCan0(String can0) {
+		this.can0 = can0;
+	}
+
+	public String getCanId() {
+		return canId;
+	}
+
+	public void setCanId(String canId) {
+		this.canId = canId;
+	}
+
+	public String getCanName() {
+		return canName;
+	}
+
+	public void setCanName(String canName) {
+		this.canName = canName;
+	}
+
+	public String getOutputMask() {
+		return outputMask;
+	}
+
+	public void setOutputMask(String outputMask) {
+		this.outputMask = outputMask;
+	}
+
+	public String getCanDesc() {
+		return canDesc;
+	}
+
+	public void setCanDesc(String canDesc) {
+		this.canDesc = canDesc;
+	}
+
+	public String getAnalogInput3() {
+		return analogInput3;
+	}
+
+	public void setAnalogInput3(String analogInput3) {
+		this.analogInput3 = analogInput3;
+	}
+
+	public String getAnalogInput4() {
+		return analogInput4;
+	}
+
+	public void setAnalogInput4(String analogInput4) {
+		this.analogInput4 = analogInput4;
+	}
+
+	public List<IOData> getIODatas() {
+		return ioDatas;
+	}
+
+	public void setIODatas(List<IOData> ioDatas) {
+		this.ioDatas = ioDatas;
+	}
+
+	public int getaimv1() {
+		return aimv1;
+	}
+
+	public void setaimv1(int aimv1) {
+		this.aimv1 = aimv1;
+	}
+
+	public int getaimv2() {
+		return aimv2;
+	}
+
+	public void setaimv2(int aimv2) {
+		this.aimv2 = aimv2;
+	}
+
+	public int getaimv3() {
+		return aimv3;
+	}
+
+	public void setaimv3(int aimv3) {
+		this.aimv3 = aimv3;
+	}
+
+	public int getaimv4() {
+		return aimv4;
+	}
+
+	public void setaimv4(int aimv4) {
+		this.aimv4 = aimv4;
+	}
+
+	public String getAlertDay() {
+		return alertDay;
+	}
+
+	public void setAlertDay(String alertDay) {
+		this.alertDay = alertDay;
+	}
+
+	public String getHarshBraking() {
+		return harshBraking;
+	}
+
+	public void setHarshBraking(String harshBraking) {
+		this.harshBraking = harshBraking;
+	}
+
+	public String getExtremeBraking() {
+		return extremeBraking;
+	}
+
+	public void setExtremeBraking(String extremeBraking) {
+		this.extremeBraking = extremeBraking;
+	}
+
+	public String getCorneringLimit() {
+		return corneringLimit;
+	}
+
+	public void setCorneringLimit(String corneringLimit) {
+		this.corneringLimit = corneringLimit;
+	}
+
+	public String getDigitalInput3() {
+		return digitalInput3;
+	}
+
+	public void setDigitalInput3(String digitalInput3) {
+		this.digitalInput3 = digitalInput3;
+	}
+
+	public String getDigitalInput4() {
+		return digitalInput4;
+	}
+
+	public void setDigitalInput4(String digitalInput4) {
+		this.digitalInput4 = digitalInput4;
+	}
+
+	public int getDirection() {
+		return direction;
+	}
+
+	public void setDirection(int direction) {
+		this.direction = direction;
+	}
+
+	public int getLockstatus() {
+		return lockstatus;
+	}
+
+	public void setLockstatus(int lockstatus) {
+		this.lockstatus = lockstatus;
+	}
+
+	public SortedMap<String, String> getSortedHashMap() {
+		return sortedHashMap;
+	}
+
+	public void setSortedHashMap(SortedMap<String, String> sortedHashMap) {
+		this.sortedHashMap = sortedHashMap;
+	}
+
+	public int getObdFuelLevel() {
+		return obdFuelLevel;
+	}
+
+	public void setObdFuelLevel(int obdFuelLevel) {
+		this.obdFuelLevel = obdFuelLevel;
+	}
+
+	public int getObdVehicleSpeed() {
+		return obdVehicleSpeed;
+	}
+
+	public void setObdVehicleSpeed(int obdVehicleSpeed) {
+		this.obdVehicleSpeed = obdVehicleSpeed;
+	}
+
+	public int getObdECT() {
+		return obdECT;
+	}
+
+	public void setObdECT(int obdECT) {
+		this.obdECT = obdECT;
+	}
+
+	public int getObdDistance() {
+		return obdDistance;
+	}
+
+	public void setObdDistance(int obdDistance) {
+		this.obdDistance = obdDistance;
+	}
+
+	public float getObdEFR() {
+		return obdEFR;
+	}
+
+	public void setObdEFR(float obdEFR) {
+		this.obdEFR = obdEFR;
+	}
+
+	public float getObdRPM() {
+		return obdRPM;
+	}
+
+	public void setObdRPM(float obdRPM) {
+		this.obdRPM = obdRPM;
+	}
+
+	public int getObdAmbientTemp() {
+		return obdAmbientTemp;
+	}
+
+	public void setObdAmbientTemp(int obdAmbientTemp) {
+		this.obdAmbientTemp = obdAmbientTemp;
+	}
+
+}

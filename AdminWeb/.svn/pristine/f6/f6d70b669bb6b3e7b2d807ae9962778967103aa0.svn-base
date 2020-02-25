@@ -1,0 +1,3 @@
+# Module ltmsweb
+# RPC service class, partial path of RPC policy file
+com.eiw.client.AdminPortalService, 13E5A045A5B89049CFCFC110E44F43B6.gwt.rpc

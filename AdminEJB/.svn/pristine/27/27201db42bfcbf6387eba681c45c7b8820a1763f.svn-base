@@ -1,0 +1,242 @@
+package com.eiw.device.simulator;
+
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import org.jboss.logging.Logger;
+
+import com.eiw.device.ejb.FleetTrackingDeviceListenerBORemote;
+import com.eiw.device.ejb.VehicleComposite;
+import com.eiw.server.TimeZoneUtil;
+import com.eiw.server.fleettrackingpu.Odometercalc;
+import com.eiw.server.fleettrackingpu.OdometercalcId;
+import com.eiw.server.fleettrackingpu.Vehicle;
+import com.eiw.server.fleettrackingpu.Vehicleevent;
+import com.eiw.server.fleettrackingpu.VehicleeventId;
+
+public class DeviceTCPIPSimulatorWOSocket extends Thread {
+
+	private String imei;
+	private String[][] dataArray;
+	private int interval;
+	private boolean sendDataContinuously = true;
+	private FleetTrackingDeviceListenerBORemote fleetTrackingDeviceListenerBO = null;
+	private static final Logger LOGGER = Logger.getLogger("simulator");
+	private static final String STR_FMECO3 = "FMEco3", STR_PRO3 = "FMPro3";
+
+	public DeviceTCPIPSimulatorWOSocket(String IMEI, String[][] dataArray,
+			int interval,
+			FleetTrackingDeviceListenerBORemote fleetTrackingDeviceListenerBO) {
+		this.imei = IMEI;
+		this.dataArray = dataArray;
+		this.interval = interval;
+		this.fleetTrackingDeviceListenerBO = fleetTrackingDeviceListenerBO;
+	}
+
+	// Run the listen/accept loop forever
+	public void run() {
+		simulate(this.imei, this.dataArray, this.interval);
+	}
+
+	public void simulate(String IMEI, String[][] dataArray, int interval) {
+		LOGGER.info("DeviceTCPIPSimulatorWOSocket::simulate:: im inside senddata method"
+				+ "IMEI"
+				+ IMEI
+				+ "dataArray"
+				+ dataArray
+				+ "interval"
+				+ interval);
+		int i = 0;
+		while (sendDataContinuously) {
+			if (i == dataArray.length) {
+				i = 0;
+			}
+			LOGGER.info("DeviceTCPIPSimulatorWOSocket::simulate:: im inside senddata No1");
+			String[] singleRecord = dataArray[i++];
+			prepareAndPersistVehicleEvent(IMEI, singleRecord);
+			try {
+				Thread.sleep(interval);
+			} catch (InterruptedException e) {
+				LOGGER.error("DeviceTCPIPSimulatorWOSocket::simulate::ERROR Occured"
+						+ e);
+			}
+		}
+		LOGGER.info("DeviceTCPIPSimulatorWOSocket::simulate:: leaving from the method succesfully"
+				+ IMEI);
+	}
+
+	private void prepareAndPersistVehicleEvent(String imeiNo, String[] dataArray) {
+		LOGGER.info("DeviceTCPIPSimulatorWOSocket:prepareAndPersistVehicleEvent:Entered into method::::"
+				+ "ImeiNo" + imeiNo + "dataArray" + dataArray);
+		String latitudeAsString = String.valueOf(dataArray[0]);
+		String longitudeAsString = String.valueOf(dataArray[1]);
+
+		int direction;
+		if (dataArray[4] == null) {
+			direction = 0;
+		} else {
+			direction = Integer.parseInt(dataArray[4]);
+		}
+
+		double latitude = Double.parseDouble(latitudeAsString.substring(0, 2)
+				+ "." + latitudeAsString.substring(2));
+		double longitude = Double.parseDouble(longitudeAsString.substring(0, 2)
+				+ "." + longitudeAsString.substring(2));
+		long odometerValue = 0;
+		Odometercalc odometercalc = new Odometercalc();
+		OdometercalcId id = new OdometercalcId();
+		boolean isOdometer = false;
+
+		VehicleComposite vehicleComposite = fleetTrackingDeviceListenerBO
+				.getVehicle(imeiNo);
+		if (vehicleComposite == null) {
+			return;
+		}
+		Vehicle vehicle = vehicleComposite.getVehicle();
+		if (vehicle == null) {
+			LOGGER.info("DeviceTCPIPSimulatorWOSocket::prepareAndPersistVehicleEvent"
+					+ imeiNo + "is not set up correctly in database");
+			return;
+		}
+		List<Vehicleevent> vehicleEvents = new ArrayList<Vehicleevent>();
+		String region = fleetTrackingDeviceListenerBO.getTimeZoneRegion(vehicle
+				.getVin());
+		// Device Model - Ruptela Device Check...
+		String deviceModel = fleetTrackingDeviceListenerBO
+				.getDeviceModelName(vehicle.getVin());
+		String previousOdometer = null;
+		if ((deviceModel.equalsIgnoreCase(STR_FMECO3))
+				|| (deviceModel.equalsIgnoreCase(STR_PRO3))) {
+			previousOdometer = fleetTrackingDeviceListenerBO.previousOdometer(
+					vehicle.getVin(), imeiNo);
+			id.setVin(vehicle.getVin());
+			id.setImeiNo(imeiNo);
+			odometercalc.setDeviceModel(deviceModel);
+		}
+		Vehicleevent vehicleEvent = new Vehicleevent();
+		VehicleeventId vehicleeventId = new VehicleeventId();
+		vehicleeventId.setVin(vehicle.getVin());
+		vehicleEvent.setServerTimeStamp(TimeZoneUtil.getDateTimeZone(
+				new Date(), region));
+		vehicleeventId.setEventTimeStamp(TimeZoneUtil.getDateTimeZone(
+				new Date(), region));
+		vehicleEvent.setLongitude(Float.parseFloat(String.valueOf(longitude)));
+		vehicleEvent.setLatitude(Float.parseFloat(String.valueOf(latitude)));
+		vehicleEvent.setSpeed(Integer.parseInt(String.valueOf(dataArray[2])));
+		// vehicleEvent.setDirection(direction);
+		vehicleEvent.setId(vehicleeventId);
+
+		vehicleEvent.setIoevent(dataArray[3]);
+
+		// New Inserts to Vehicleevent table(fuel and engine)
+		Map<Integer, Integer> hmapIO = new HashMap<Integer, Integer>();
+
+		// Default AI, DI, Temperature Inserts
+		String[] ioDetailsfromVehicleEvent = dataArray[3].split(",");
+		for (int j = 0; j < ioDetailsfromVehicleEvent.length; j++) {
+			String[] inputTypefromVehicleEvent = ioDetailsfromVehicleEvent[j]
+					.split("=");
+			hmapIO.put(Integer.parseInt(inputTypefromVehicleEvent[0]),
+					Integer.parseInt(inputTypefromVehicleEvent[1]));
+
+			if (inputTypefromVehicleEvent.length > 1) {
+				if (inputTypefromVehicleEvent[0].equalsIgnoreCase("72")) {
+					vehicleEvent.setTempSensor1(Long
+							.valueOf(inputTypefromVehicleEvent[1]));
+				} else if (inputTypefromVehicleEvent[0].equalsIgnoreCase("73")) {
+					vehicleEvent.setTempSensor2(Long
+							.valueOf(inputTypefromVehicleEvent[1]));
+				} else if (inputTypefromVehicleEvent[0].equalsIgnoreCase("74")) {
+					vehicleEvent.setTempSensor3(Long
+							.valueOf(inputTypefromVehicleEvent[1]));
+				} else if (inputTypefromVehicleEvent[0].equalsIgnoreCase("199")) {
+					if ((deviceModel.equalsIgnoreCase(STR_FMECO3))
+							|| (deviceModel.equalsIgnoreCase(STR_PRO3))) {
+						isOdometer = true;
+						odometerValue = Long
+								.valueOf(inputTypefromVehicleEvent[1]);
+						if (previousOdometer != null) {
+							vehicleEvent.setOdometer(odometerValue
+									- Long.valueOf(previousOdometer));
+							id.setCurOdometerVal(odometerValue
+									- Long.valueOf(previousOdometer));
+						} else {
+							vehicleEvent.setOdometer(odometerValue);
+							id.setCurOdometerVal(odometerValue);
+						}
+						odometercalc.setOdometerActual(odometerValue);
+						odometercalc.setLastUpdDt(vehicleeventId
+								.getEventTimeStamp());
+						odometercalc.setId(id);
+					} else {
+						vehicleEvent.setOdometer(Long
+								.valueOf(inputTypefromVehicleEvent[1]));
+					}
+				} else if (inputTypefromVehicleEvent[0].equalsIgnoreCase("66")) {
+					vehicleEvent.setBattery(Long
+							.parseLong(inputTypefromVehicleEvent[1]));
+				} else if (inputTypefromVehicleEvent[0].equalsIgnoreCase("9")) {
+					vehicleEvent.setAi1(Integer
+							.parseInt(inputTypefromVehicleEvent[1]));
+				} else if (inputTypefromVehicleEvent[0].equalsIgnoreCase("10")) {
+					vehicleEvent.setAi2(Integer
+							.parseInt(inputTypefromVehicleEvent[1]));
+				} else if (inputTypefromVehicleEvent[0].equalsIgnoreCase("11")) {
+					vehicleEvent.setAi3(Integer
+							.parseInt(inputTypefromVehicleEvent[1]));
+				} else if (inputTypefromVehicleEvent[0].equalsIgnoreCase("19")) {
+					vehicleEvent.setAi4(Integer
+							.parseInt(inputTypefromVehicleEvent[1]));
+				} else if (inputTypefromVehicleEvent[0].equalsIgnoreCase("1")) {
+					vehicleEvent.setEngine((inputTypefromVehicleEvent[1].trim()
+							.equalsIgnoreCase("1")) ? true : false);
+					vehicleEvent.setDi1(Integer
+							.parseInt(inputTypefromVehicleEvent[1]));
+				} else if (inputTypefromVehicleEvent[0].equalsIgnoreCase("2")) {
+					vehicleEvent.setDi2(Integer
+							.parseInt(inputTypefromVehicleEvent[1]));
+				} else if (inputTypefromVehicleEvent[0].equalsIgnoreCase("3")) {
+					vehicleEvent.setDi3(Integer
+							.parseInt(inputTypefromVehicleEvent[1]));
+				} else if (inputTypefromVehicleEvent[0].equalsIgnoreCase("4")) {
+					vehicleEvent.setDi4(Integer
+							.parseInt(inputTypefromVehicleEvent[1]));
+				}
+			}
+		}
+
+		vehicleEvents.add(vehicleEvent);
+		fleetTrackingDeviceListenerBO.persistDeviceData(vehicleEvents,
+				vehicleComposite);
+		if ((deviceModel.equalsIgnoreCase(STR_FMECO3))
+				|| (deviceModel.equalsIgnoreCase(STR_PRO3))) {
+			if (isOdometer) {
+				fleetTrackingDeviceListenerBO.persistOdometerCalc(odometercalc);
+			}
+		}
+	}
+
+	public String getIMEI() {
+		return imei;
+	}
+
+	public void setIMEI(String iMEI) {
+		imei = iMEI;
+	}
+
+	public int getInterval() {
+		return interval;
+	}
+
+	public void setInterval(int interval) {
+		this.interval = interval;
+	}
+
+	public void setSendDataContinuously(boolean sendDataContinuously) {
+		this.sendDataContinuously = sendDataContinuously;
+	}
+
+}

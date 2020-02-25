@@ -1,0 +1,94 @@
+<?xml version="1.0"?>
+<project name="BUILD" basedir="." default="start-jboss">
+	<path id="project.class.path">
+		<fileset dir="/LTSAdminEAR/ear/lib" includes="*.jar" />
+	</path>
+	<property name="JBOSS" value="/home/ubuntu/jboss_admin_9090" />
+	<property name="JBOSSDEP"
+		value="${JBOSS}/standalone/deployments/LTSAdminEAR.ear" />
+	<property name="JBOSSLOC" value="${JBOSS}/bin/standalone.sh" />
+
+	<target name="stop-jboss">
+		<echo>Stop Jboss</echo>
+		<exec executable="/home/ubuntu/jboss_admin_9090/bin/standalone.sh">
+			<arg line="--connect controller=127.0.0.1:59999" />
+			<arg value="command=:shutdown" />
+		</exec>
+		<echo>| J B O S S S T O P P E D |</echo>
+	</target>
+
+	<target name="clean" depends="stop-jboss" description="Cleans this project">
+		<delete dir="${JBOSSDEP}" failonerror="false" />
+
+<!-- 		<delete dir="${JBOSS}\standalone\deployments\LTSWebEAR.ear.failed" -->
+<!-- 			failonerror="false" /> -->
+
+		<delete dir="${JBOSS}/standalone/deployments/LTSAdminEAR.ear.failed"
+			failonerror="false" />
+
+	</target>
+
+	<target name="Dodeployfile" description="Create dodeployfiles"
+		depends="clean">
+
+<!-- 		<touch file="LTSWebEAR.ear.dodeploy" /> -->
+		<touch file="LTSAdminEAR.ear.dodeploy" />
+	</target>
+
+	<target name="ear" depends="webProject">
+		<mkdir dir="${JBOSS}/standalone/deployments/LTSAdminEAR.ear" />
+		<mkdir
+			dir="${JBOSS}/standalone/deployments/LTSAdminEAR.ear/LTSAdminEJB.jar" />
+		<!-- <mkdir dir="${JBOSSLOC}\LTSAdminEAR.ear\LTSAdminEJB.jar"/> <mkdir 
+			dir="${JBOSSLOC}\LTSAdminEAR.ear\LTSAdminWeb.war"/> -->
+		<!-- <zip destfile="${JBOSSDEP}" basedir="ear" /> -->
+		<copy todir="${JBOSS}/standalone/deployments/LTSAdminEAR.ear">
+			<fileset dir="ear" />
+		</copy>
+		<copy
+			todir="${JBOSS}/standalone/deployments/LTSAdminEAR.ear/LTSAdminEJB.jar">
+			<fileset dir="../LTSAdminEJB/build" />
+		</copy>
+		<copy todir="${JBOSS}/standalone/deployments/LTSAdminEAR.ear/lib">
+			<fileset file="../LTSCommonUtil/util.jar" />
+		</copy>
+		<copy todir="${JBOSS}/standalone/deployments/LTSAdminEAR.ear">
+			<fileset file="../LTSAdminEAR/DCFrameworkBO.jar" />
+		</copy>
+		<!-- <copy todir="${JBOSSLOC}\LTSAdminEAR.ear\LTSAdminEJB.jar" > <fileset 
+			dir="..\LTSAdminEJB\build.jar"/> </copy> -->
+		<!-- <copy todir="${JBOSSLOC}\LTSAdminEAR.ear\LTSAdminWeb.war" > <fileset 
+			dir="..\LTSAdminWeb\war"/> </copy> -->
+	</target>
+	<target name="EJbProject" depends="CommonUtil">
+		<!-- <ant dir="C:/work/project1" target="clean"/> -->
+		<ant dir="../LTSAdminEJB" target="deploy" />
+	</target>
+	<target name="webProject" depends="EJbProject">
+		<!-- <ant dir="F:\COB15032013_1223\ConInConnectivityWeb" target="clean"/> -->
+		<ant dir="../LTSAdminWeb" target="deploy" />
+	</target>
+	<target name="CommonUtil" depends="Dodeployfile">
+		<!-- <ant dir="F:\COB15032013_1223\ConInConnectivityWeb" target="clean"/> -->
+		<ant dir="../LTSCommonUtil" />
+	</target>
+	<target name="start-jboss" depends="ear">
+	<!-- <target name="start-jboss" description="Starts back-end EJB container" -->
+	<!-- depends="buildall"> -->
+	<!-- <exec executable="${JBOSSLOC}" spawn="false"></exec> -->
+	<!-- <copy todir="destination of where you want the file to go" overwrite="true"> -->
+	<!-- <fileset file="myfile.war" /> -->
+	<!-- <fileset file="myfile.ear" /> -->
+	<!-- </copy> -->
+	<!-- <echo>JBOSS</echo> -->
+	<!-- <echo>| J B O S S S T A R T E D |</echo> -->
+	<!-- <echo>STARTING</echo>  -->
+	<!-- </target> -->
+	<echo>"Start Jboss"</echo>
+	<exec executable="${JBOSSLOC}" timeout="200000">
+	</exec>
+	<echo>| J B O S S S T A R T E D |</echo>
+	</target>
+	</project>
+	
+		

@@ -1,0 +1,848 @@
+package com.eiw.device.handler.method;
+
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import org.jboss.logging.Logger;
+
+import com.eiw.device.ejb.FleetTrackingDeviceListenerBORemote;
+import com.eiw.device.ejb.VehicleComposite;
+import com.eiw.device.handler.MeiTrackDeviceHandler;
+import com.eiw.device.meitrack.Position;
+import com.eiw.server.TimeZoneUtil;
+import com.eiw.server.bo.BOFactory;
+import com.eiw.server.companyadminpu.Provider;
+import com.eiw.server.fleettrackingpu.Odometercalc;
+import com.eiw.server.fleettrackingpu.OdometercalcId;
+import com.eiw.server.fleettrackingpu.Vehicle;
+import com.eiw.server.fleettrackingpu.Vehicleevent;
+import com.eiw.server.fleettrackingpu.VehicleeventId;
+import com.eiw.server.studenttrackingpu.Routetrip;
+import com.eiw.server.studenttrackingpu.Studentalertsubscription;
+import com.eiw.server.studenttrackingpu.Studentdetails;
+import com.eiw.server.studenttrackingpu.Studentevent;
+import com.eiw.server.studenttrackingpu.StudenteventId;
+import com.skt.alerts.CommonUtil;
+import com.skt.alerts.SKTAlertsManager;
+import com.skt.client.dto.StudentData;
+import com.skt.client.dto.VehicleTripTimeDto;
+
+public class SKTHandlerMethods {
+
+	FleetTrackingDeviceListenerBORemote fleetTrackingDeviceListenerBO = BOFactory
+			.getFleetTrackingDeviceListenerBORemote();
+	private final Logger LOGGER = Logger.getLogger("listener");
+	public static Map<String, String> odometerForTowed = new HashMap<String, String>();
+	public static Map<String, List<Vehicleevent>> vehicleeventMap = new HashMap<String, List<Vehicleevent>>();
+	public static Map<String, Date> prevTime = new HashMap<String, Date>();
+	public static Map<String, String> accForSpeed = new HashMap<String, String>();
+	public static Map<String, String> hbdCheck = new HashMap<String, String>();
+	public static Map<String, String> aiVolCheckMdl = new HashMap<String, String>();
+	public static Map<String, String> aiVolCheckVal = new HashMap<String, String>();
+
+	public void insertService(VehicleComposite vehicleComposite,
+			Position position,
+			FleetTrackingDeviceListenerBORemote fleetTrackingDeviceListenerBO,
+			String imeiNo, Map<String, StudentData> studentDetailsNStatusMap,
+			List<Studentalertsubscription> studentalertsubscriptions) {
+		try {
+
+			Vehicle vehicle = vehicleComposite.getVehicle();
+			Vehicleevent vehicleEvent = prepareVehicleEvents(vehicleComposite,
+					position, imeiNo);
+			if (vehicleEvent != null) {
+				List<Vehicleevent> vehicleEvents = new ArrayList<Vehicleevent>();
+				vehicleEvents.add(vehicleEvent);
+				fleetTrackingDeviceListenerBO.persistDeviceData(vehicleEvents,
+						vehicleComposite);
+				prepareStudentAlerts(vehicle, vehicleEvent, position,
+						fleetTrackingDeviceListenerBO, imeiNo,
+						studentDetailsNStatusMap, studentalertsubscriptions);
+			}
+		} catch (Exception e) {
+			LOGGER.error("SKTLog:MeiTrackDeviceHandler :Exception:  insertService :: "
+					+ e.getMessage());
+			e.printStackTrace();
+		}
+	}
+
+	private Studentevent prepareStudentEvents(
+			VehicleComposite vehicleComposite, Position position, String imeiNo) {
+		Studentevent studentevent = new Studentevent();
+
+		try {
+			studentevent.setLatitude(position.getLatitude().floatValue());
+			studentevent.setLongitude(position.getLongitude().floatValue());
+			studentevent.setServerTimeStamp(TimeZoneUtil.getDateInTimeZone());
+			StudenteventId studenteventId = new StudenteventId();
+			String region = vehicleComposite.getTimeZoneRegion();
+			studenteventId.setEventTimeStamp(TimeZoneUtil.getDateTimeZone(
+					position.getTime(), region));
+			studenteventId.setTagId(position.getRfid());
+			studenteventId.setVin(vehicleComposite.getVehicle().getVin());
+			studentevent.setId(studenteventId);
+			return studentevent;
+		} catch (Exception e) {
+			LOGGER.error("SKTLog:MeiTrackDeviceHandler :: prepareStudentEvents: Exception"
+					+ e.getMessage());
+			e.printStackTrace();
+			return null;
+		}
+	}
+
+	public Vehicleevent prepareVehicleEvents(VehicleComposite vehicleComposite,
+			Position position, String imeiNo) {
+		Vehicleevent vehicleEvent = new Vehicleevent();
+		Vehicle vehicle = vehicleComposite.getVehicle();
+		try {
+			Odometercalc odometercalc = new Odometercalc();
+			OdometercalcId id = new OdometercalcId();
+			long odometerValue;
+			String deviceModel = vehicleComposite.getDeviceModel();
+			id.setVin(vehicle.getVin());
+			id.setImeiNo(imeiNo);
+			odometercalc.setDeviceModel(deviceModel);
+			String region = vehicleComposite.getTimeZoneRegion();
+			VehicleeventId vehicleeventId = new VehicleeventId();
+			vehicleeventId.setEventTimeStamp(TimeZoneUtil.getDateTimeZone(
+					position.getTime(), region));
+			vehicleeventId.setVin(vehicle.getVin());
+			vehicleEvent.setId(vehicleeventId);
+			vehicleEvent.setServerTimeStamp(TimeZoneUtil.getDateInTimeZone());
+
+			float latitude = position.getLatitude().floatValue();
+			latitude = (float) Math.round(latitude * 10000) / 10000;
+			float longitude = position.getLongitude().floatValue();
+			longitude = (float) Math.round(longitude * 10000) / 10000;
+
+			vehicleEvent.setLongitude(longitude);
+			vehicleEvent.setLatitude(latitude);
+			vehicleEvent.setSpeed(position.getSpeed().intValue());
+			odometerValue = Long.valueOf(position.getMileage());
+			String previousOdometer = MeiTrackDeviceHandler.getPrevOdometer(
+					vehicle.getVin(), imeiNo);
+			if (previousOdometer != null
+					&& !previousOdometer.equalsIgnoreCase("null")) {
+				Vehicleevent ve = MeiTrackDeviceHandler.getPrevVE(vehicle
+						.getVin());
+				if (ve != null
+						&& !ve.getId()
+								.getEventTimeStamp()
+								.after(vehicleEvent.getId().getEventTimeStamp())) {
+					vehicleEvent.setOdometer(Math.abs(odometerValue
+							- Long.valueOf(previousOdometer)));
+					id.setCurOdometerVal(Math.abs(odometerValue
+							- Long.valueOf(previousOdometer)));
+				} else {
+					vehicleEvent.setOdometer(0L);
+					id.setCurOdometerVal(0);
+				}
+			} else {
+				vehicleEvent.setOdometer(odometerValue);
+				id.setCurOdometerVal(odometerValue);
+			}
+			odometercalc.setOdometerActual(odometerValue);
+			odometercalc.setLastUpdDt(vehicleeventId.getEventTimeStamp());
+			odometercalc.setId(id);
+			vehicleEvent.setDi1(position.getDI1());
+			vehicleEvent.setDi2(position.getDI2());
+			vehicleEvent.setDi3(position.getDI3());
+			vehicleEvent.setEngine(position.getDI3() == 1 ? true : false);
+			vehicleEvent.setAi1(position.getADC1());
+			vehicleEvent.setAi2(position.getADC2());
+			vehicleEvent.setAi3(position.getADC3());
+			vehicleEvent.setTags(position.getRfid());
+			String status = fleetTrackingDeviceListenerBO
+					.persistOdometerCalc(odometercalc);
+			if (status.equalsIgnoreCase("Success")) {
+				String prevOdometer = String.valueOf(odometercalc
+						.getOdometerActual());
+				MeiTrackDeviceHandler.prevOdometerMap.put(vehicle.getVin(),
+						prevOdometer);
+			}
+			return vehicleEvent;
+		} catch (Exception e) {
+			LOGGER.error("SKTLog:MeiTrackDeviceHandler :: PreparevehicleEvents:"
+					+ e.getMessage());
+			e.printStackTrace();
+			return null;
+		}
+	}
+
+	private void prepareStudentAlerts(Vehicle vehicle,
+			Vehicleevent vehicleEvent, Position position,
+			FleetTrackingDeviceListenerBORemote entityManagerService,
+			String imeiNo, Map<String, StudentData> studentDetailsNStatusMap,
+			List<Studentalertsubscription> studentalertsubscriptions) {
+		SKTAlertsManager sktAlertsManager = new SKTAlertsManager();
+
+		// SKTAlertsManager alertsManager=new SKTAlertsManager();
+		// alertsManager.insertTagintoDB(position.getRfid());
+		// SKTAlertsManager alertsManager = new SKTAlertsManager();
+		// if (!position.getRfid().equalsIgnoreCase("1")) {
+		// alertsManager.insertTagintoDB(String.format("%010d",
+		// Integer.parseInt(position.getRfid())));
+		// }
+
+		if (!position.getRfid().equalsIgnoreCase("1")
+				&& position.getRfid().length() > 5) {
+			int carddiffrence = 10 - position.getRfid().length();
+			if (carddiffrence > 0) {
+				position.setRfid(String.format("%010d",
+						Integer.parseInt(position.getRfid())));
+			}
+
+			String cardHit = position.getRfid();
+			boolean isCorrectBus = studentDetailsNStatusMap
+					.containsKey(cardHit);
+			LOGGER.info("SKTLog:MeiTrackDeviceHandler : prepareVehicleEvents: singlePassiveTag = "
+					+ cardHit + " and isCorrectBus =  " + isCorrectBus);
+			if (!isCorrectBus) {
+				StudentData studentData = entityManagerService
+						.getStudentData(cardHit);
+				LOGGER.info("SKTLog:MeiTrackDeviceHandler : prepareVehicleEvents: studentData = "
+						+ studentData);
+				if (studentData == null) {
+					LOGGER.info("SKTLog:MeiTrackDeviceHandler : prepareVehicleEvents: studentData null");
+					return;
+				}
+				studentDetailsNStatusMap.put(cardHit, studentData);
+			}
+			Date studentlastupdddate = studentDetailsNStatusMap.get(cardHit)
+					.getEventTime();
+			Date eventTime = vehicleEvent.getId().getEventTimeStamp();
+			boolean isSameDay = CommonUtil.isSameDay(studentlastupdddate,
+					eventTime);
+			long seconds = (eventTime.getTime() - studentlastupdddate.getTime()) / 1000;
+			if (isSameDay && seconds > -30 && seconds <= 30) {
+				return;
+			}
+
+			Boolean isDateTimeEnabled = entityManagerService
+					.checkDateAndTime(vehicle);
+
+			LOGGER.info("SKTLog:MeiTrackDeviceHandler prepareVehicleEvents isDateTimeEnabled"
+					+ isDateTimeEnabled);
+			if (isDateTimeEnabled)
+				sktAlertsManager.manageSchoolAlerts(vehicleEvent, cardHit,
+						studentDetailsNStatusMap, studentalertsubscriptions,
+						vehicle);
+		}
+	}
+
+	public void persistEventAndGenerateAlert(Position position,
+			VehicleComposite vehicleComposite, String imeiNo,
+			String deviceModel, Vehicleevent vehicleEvent) {
+		SKTAlertsManager sktAlertsManager = new SKTAlertsManager();
+		if (position == null)
+			position = getPositionObject(vehicleEvent, imeiNo);
+
+		String rfid = position.getRfid();
+		// Data from device without RFID card
+		try {
+			if (rfid == null || rfid.equalsIgnoreCase("1")) {
+				if (vehicleEvent == null)
+					vehicleEvent = prepareVehicleEvents(vehicleComposite,
+							position, imeiNo);
+
+				// Check Is Push Notification Device
+				// Provider provider = sktAlertsManager
+				// .getDevicesForPushNotificatoinDemo(imeiNo);
+				// if (provider != null) {
+				// return;
+				// }
+				// Bus related alerts - BEGIN
+				try {
+					if (vehicleComposite.getVehicle().getVehiclemodel()
+							.getRemarks() != null
+							&& vehicleComposite.getVehicle().getVehiclemodel()
+									.getRemarks().equalsIgnoreCase("Immovable")
+							&& vehicleEvent.getEngine() != null) {
+						if (vehicleEvent.getEngine()) {
+							fleetTrackingDeviceListenerBO.persistHourMeter(
+									vehicleEvent, 1);
+						} else {
+							fleetTrackingDeviceListenerBO.persistHourMeter(
+									vehicleEvent, 0);
+						}
+					}
+					Date eventTimeStamp = vehicleEvent.getId()
+							.getEventTimeStamp();
+					Date actualTimeStamp = TimeZoneUtil.getDateTimeZone(
+							new Date(), vehicleComposite.getTimeZoneRegion());
+					LOGGER.info("SKTLog:MeiTrackDeviceHandler prepareEventAndAlert rfid = "
+							+ rfid
+							+ " eventTimeStamp = "
+							+ eventTimeStamp.toString());
+					if (MeiTrackDeviceHandler.isSKT == null) {
+						boolean isskt = sktAlertsManager.sktAlertsEJBRemote
+								.getApplicationStatus();
+						if (isskt)
+							MeiTrackDeviceHandler.isSKT = "true";
+						else
+							MeiTrackDeviceHandler.isSKT = "false";
+					}
+					if (MeiTrackDeviceHandler.isSKT.equalsIgnoreCase("true")) {
+						long diff = actualTimeStamp.getTime()
+								- eventTimeStamp.getTime();
+						long diffMinutes = diff / (60 * 1000);
+						if (diffMinutes < 5) {
+							getCurrentORupcomingRT(sktAlertsManager,
+									vehicleComposite, eventTimeStamp);
+							String vin = vehicleComposite.getVehicle().getVin();
+							if (MeiTrackDeviceHandler.currentORupcomingRTMap
+									.get(vin) != null) {
+								LOGGER.info("SKTLog:MeiTrackDeviceHandler prepareEventAndAlert TripStarttime="
+										+ MeiTrackDeviceHandler.currentORupcomingRTMap
+												.get(vin).getTripStarttime());
+								Date tripStartTime = MeiTrackDeviceHandler.currentORupcomingRTMap
+										.get(vin).getTripStarttime();
+								Date tripEndTime = MeiTrackDeviceHandler.currentORupcomingRTMap
+										.get(vin).getTripEndtime();
+
+								boolean isCurrentTrip = isTimeInRange(
+										tripStartTime, tripEndTime,
+										eventTimeStamp);
+								if (MeiTrackDeviceHandler.vehicleTripTimeMap
+										.get(vin) == null) {
+									VehicleTripTimeDto vehicleTripTimeDto = new VehicleTripTimeDto();
+									vehicleTripTimeDto.setVin(vin);
+									vehicleTripTimeDto
+											.setPlateNo(vehicleComposite
+													.getVehicle().getPlateNo());
+									MeiTrackDeviceHandler.vehicleTripTimeMap
+											.put(vin, vehicleTripTimeDto);
+									MeiTrackDeviceHandler.stopCountMap.put(vin,
+											0);
+								}
+								if (isCurrentTrip) {
+									getVehicleTripTimeMap(vehicleEvent,
+											eventTimeStamp);
+									boolean isEnableTripDay = checkEnableTripday(
+											MeiTrackDeviceHandler.currentORupcomingRTMap
+													.get(vin).getTripDay(),
+											eventTimeStamp);
+									boolean isEnableDay = false;
+									if (isEnableTripDay) {
+										isEnableDay = sktAlertsManager.sktAlertsEJBRemote
+												.checkEnableOrDisableDay(
+														eventTimeStamp,
+														MeiTrackDeviceHandler.currentORupcomingRTMap
+																.get(vin)
+																.getSchoolId(),
+														"Disable");
+									} else {
+										isEnableDay = sktAlertsManager.sktAlertsEJBRemote
+												.checkEnableOrDisableDay(
+														eventTimeStamp,
+														MeiTrackDeviceHandler.currentORupcomingRTMap
+																.get(vin)
+																.getSchoolId(),
+														"Enable");
+									}
+									if (isEnableDay) {
+										LOGGER.info("SKTLog:MeiTrackDeviceHandler prepareEventAndAlert time = "
+												+ tripStartTime
+												+ " and "
+												+ tripEndTime
+												+ " and  "
+												+ eventTimeStamp.toString());
+										sktAlertsManager
+												.stuentsAlertsByBusMove(
+														vehicleComposite,
+														MeiTrackDeviceHandler.currentORupcomingRTMap
+																.get(vin),
+														vehicleEvent);
+									}
+								}
+							}
+						} else {
+							LOGGER.error("Time difference greater than 5 minutes"
+									+ " eventTimeStamp = "
+									+ eventTimeStamp.toString()
+									+ " vin = "
+									+ vehicleEvent.getId().getVin());
+						}
+					}
+					// Bus related alerts - END
+
+				} catch (Exception e) {
+					LOGGER.error("SKTLog:MeiTrackDeviceHandler prepareEventAndAlert if loop Exception = "
+							+ e.getMessage());
+					e.printStackTrace();
+				} finally {
+					Vehicleevent prevVE = fleetTrackingDeviceListenerBO
+							.persistDeviceData(vehicleEvent, vehicleComposite);
+					String vin = vehicleComposite.getVehicle().getVin();
+					MeiTrackDeviceHandler.prevVehicleeventMap.put(vin, prevVE);
+					LiveTrackingDataPusher(vehicleEvent, vehicleComposite);
+				}
+			}
+			// Data from device with RFID card
+			else {
+				int carddiffrence = 10 - rfid.length();
+				if (carddiffrence > 0) {
+					rfid = String.format("%010d", Integer.parseInt(rfid));
+					position.setRfid(rfid);
+				}
+				LOGGER.info("SKTLog:MeiTrackDeviceHandler prepareEventAndAlert rfid = "
+						+ rfid);
+				Studentevent studentevent = prepareStudentEvents(
+						vehicleComposite, position, imeiNo);
+
+				Date eventTimeStamp = studentevent.getId().getEventTimeStamp();
+				Studentdetails studentdetails = fleetTrackingDeviceListenerBO
+						.getStudentDetails(rfid);
+				if (studentdetails != null) {
+					if (studentdetails.getState() != null
+							&& studentdetails.getState().equalsIgnoreCase(
+									"noRFIDfound")) {
+						LOGGER.info("SKTLog:MeiTrackDeviceHandler prepareEventAndAlert Notastudent="
+								+ rfid);
+						studentevent.setRemarks("RFID card does not exist");
+						boolean isStudentEventPersisted = fleetTrackingDeviceListenerBO
+								.persistStudentEvent(studentevent);
+						if (!isStudentEventPersisted) {
+							LOGGER.info("SKTLog:MeiTrackDeviceHandler prepareEventAndAlert isStudentEventPersisted false ="
+									+ rfid);
+						}
+						return;
+					}
+					long cardSwipedInterval = getCardSwipedInterval(
+							studentdetails, studentevent, 30);
+					if (cardSwipedInterval != 0) {
+						LOGGER.info("SKTLog:MeiTrackDeviceHandler prepareEventAndAlert isCardSwipedFrequent ="
+								+ cardSwipedInterval + " = " + rfid);
+						studentevent
+								.setRemarks("RFID card swiped frequently in "
+										+ cardSwipedInterval + " seconds");
+						boolean isStudentEventPersisted = fleetTrackingDeviceListenerBO
+								.persistStudentEvent(studentevent);
+						if (!isStudentEventPersisted) {
+							LOGGER.info("SKTLog:MeiTrackDeviceHandler prepareEventAndAlert isStudentEventPersisted false ="
+									+ rfid);
+						}
+						return;
+					} else {
+						studentevent.setRemarks("NoRemarks");
+						boolean isStudentEventPersisted = fleetTrackingDeviceListenerBO
+								.persistStudentEvent(studentevent);
+						if (!isStudentEventPersisted) {
+							LOGGER.info("SKTLog:MeiTrackDeviceHandler prepareEventAndAlert isStudentEventPersisted false ="
+									+ rfid);
+							return;
+						}
+
+						// Push Notification start
+						Provider provider = sktAlertsManager
+								.getDevicesForPushNotificatoinDemo(imeiNo);
+						if (provider != null) {
+							sktAlertsManager.setPushNotificationForDemo(
+									provider, position, studentdetails);
+							return;
+						}
+						// Push Notification end
+						getCurrentORupcomingRT(sktAlertsManager,
+								vehicleComposite, eventTimeStamp);
+						String vin = vehicleComposite.getVehicle().getVin();
+
+						if (MeiTrackDeviceHandler.currentORupcomingRTMap
+								.get(vin) != null) {
+							Date tripStartTime = MeiTrackDeviceHandler.currentORupcomingRTMap
+									.get(vin).getTripStarttime();
+							Date tripEndTime = MeiTrackDeviceHandler.currentORupcomingRTMap
+									.get(vin).getTripEndtime();
+
+							boolean isCurrentTrip = isTimeInRange(
+									tripStartTime, tripEndTime, eventTimeStamp);
+							if (isCurrentTrip) {
+								LOGGER.info("SKTLog:MeiTrackDeviceHandler prepareEventAndAlert tripStartTime tripEndTime "
+										+ tripStartTime.toString()
+										+ " and "
+										+ tripEndTime.toString()
+										+ " and "
+										+ eventTimeStamp.toString());
+
+								sktAlertsManager
+										.prepareStudentAlerts(
+												studentevent,
+												vehicleComposite,
+												MeiTrackDeviceHandler.currentORupcomingRTMap
+														.get(vin),
+												studentdetails);
+							}
+						} else {
+
+							sktAlertsManager
+									.prepareStudentAlerts(
+											studentevent,
+											vehicleComposite,
+											MeiTrackDeviceHandler.currentORupcomingRTMap
+													.get(vin), studentdetails);
+						}
+						if (studentdetails.getStatus() == 0) {
+							sktAlertsManager
+									.studentGeozoneCreation(
+											studentevent,
+											vehicleComposite,
+											MeiTrackDeviceHandler.currentORupcomingRTMap
+													.get(vin), studentdetails);
+						}
+					}
+				}
+			}
+		} catch (Exception e) {
+			LOGGER.error("SKTLog:MeiTrackDeviceHandler prepareEventAndAlert else loop Exception = "
+					+ e.getMessage());
+			e.printStackTrace();
+		}
+	}
+
+	private void LiveTrackingDataPusher(Vehicleevent vehicleevent,
+			VehicleComposite vehicleComposite) {
+		// TODO Auto-generated method stub
+		fleetTrackingDeviceListenerBO.liveTrackingDataPusher(vehicleevent,
+				vehicleComposite);
+	}
+
+	private void getVehicleTripTimeMap(Vehicleevent vehicleEvent,
+			Date eventTimeStamp) {
+		String vin = vehicleEvent.getId().getVin();
+		if (MeiTrackDeviceHandler.currentORupcomingRTMap.get(vin).getType()
+				.equalsIgnoreCase("Pickup")) {
+			if (vehicleEvent.getEngine() == true && vehicleEvent.getSpeed() > 1) {
+				if (MeiTrackDeviceHandler.vehicleTripTimeMap.get(vin)
+						.getPickUpTripStarttime() == null) {
+					MeiTrackDeviceHandler.vehicleTripTimeMap.get(vin)
+							.setPickUpTripStarttime(
+									getTimeString(eventTimeStamp));
+				}
+			} else if (MeiTrackDeviceHandler.vehicleTripTimeMap.get(vin)
+					.getPickUpTripStarttime() != null
+					&& vehicleEvent.getEngine() == false
+					&& vehicleEvent.getSpeed() == 0) {
+				if (MeiTrackDeviceHandler.vehicleTripTimeMap.get(vin)
+						.getPickUpTripEndtime() == null) {
+					int count = MeiTrackDeviceHandler.stopCountMap.get(vin);
+					MeiTrackDeviceHandler.stopCountMap.put(vin, count + 1);
+					if (MeiTrackDeviceHandler.stopCountMap.get(vin) == 5) {
+						MeiTrackDeviceHandler.vehicleTripTimeMap.get(vin)
+								.setPickUpTripEndtime(
+										getTimeString(eventTimeStamp));
+						MeiTrackDeviceHandler.stopCountMap.put(vin, 0);
+					}
+				}
+			}
+		} else {
+			if (vehicleEvent.getEngine() == true && vehicleEvent.getSpeed() > 1) {
+				if (MeiTrackDeviceHandler.vehicleTripTimeMap.get(vin)
+						.getDropTripStarttime() == null) {
+					MeiTrackDeviceHandler.vehicleTripTimeMap
+							.get(vin)
+							.setDropTripStarttime(getTimeString(eventTimeStamp));
+				}
+			} else if (MeiTrackDeviceHandler.vehicleTripTimeMap.get(vin)
+					.getDropTripStarttime() != null
+					&& vehicleEvent.getEngine() == false
+					&& vehicleEvent.getSpeed() == 0) {
+				if (MeiTrackDeviceHandler.vehicleTripTimeMap.get(vin)
+						.getDropTripEndtime() == null) {
+					int count = MeiTrackDeviceHandler.stopCountMap.get(vin);
+					MeiTrackDeviceHandler.stopCountMap.put(vin, count + 1);
+					if (MeiTrackDeviceHandler.stopCountMap.get(vin) == 5) {
+						MeiTrackDeviceHandler.vehicleTripTimeMap.get(vin)
+								.setDropTripEndtime(
+										getTimeString(eventTimeStamp));
+						MeiTrackDeviceHandler.stopCountMap.put(vin, 0);
+					}
+				}
+			}
+		}
+
+	}
+
+	private String getTimeString(Date eventTimeStamp) {
+		// TODO Auto-generated method stub
+		String noon = "", hour = "", minute = "";
+		int hr;
+		if (eventTimeStamp.getHours() > 12) {
+			noon = " PM";
+			hr = eventTimeStamp.getHours() - 12;
+		} else {
+			noon = " AM";
+			hr = eventTimeStamp.getHours();
+		}
+		if (String.valueOf(hr).length() == 1) {
+			hour = "0" + String.valueOf(hr);
+		} else
+			hour = String.valueOf(hr);
+		if (String.valueOf(eventTimeStamp.getMinutes()).length() == 1) {
+			minute = "0" + String.valueOf(eventTimeStamp.getMinutes());
+		} else
+			minute = String.valueOf(eventTimeStamp.getMinutes());
+		String time = hour + ":" + minute + ":00" + noon;
+		return time;
+	}
+
+	private boolean checkEnableTripday(Integer tripDay, Date eventTimeStamp) {
+		// TODO Auto-generated method stub
+		SimpleDateFormat simpleDateformat = new SimpleDateFormat("E");
+		String[] days = { "sun", "mon", "tue", "wed", "thu", "fri", "sat" };
+		String curday = simpleDateformat.format(eventTimeStamp);
+		int i = 64, j = 0;
+		while (i >= 1) {
+			j++;
+			if (tripDay / i == 1) {
+				tripDay = tripDay % i;
+				if (days[j - 1].equalsIgnoreCase(curday))
+					return true;
+			}
+			i = i / 2;
+		}
+		return false;
+	}
+
+	public Routetrip getCurrentRouteTrip(VehicleComposite vehicleComposite,
+			SKTAlertsManager sktAlertsManager, Date eventTimeStamp) {
+		Routetrip currentRouteTrip, lastRouteTrip = MeiTrackDeviceHandler.currentORupcomingRTMap
+				.get(vehicleComposite.getVehicle().getVin());
+		if (lastRouteTrip != null) {
+			boolean isLastTripIsCurrentTrip = isTimeInRange(
+					lastRouteTrip.getTripStarttime(),
+					lastRouteTrip.getTripEndtime(), eventTimeStamp);
+			if (isLastTripIsCurrentTrip)
+				currentRouteTrip = lastRouteTrip;
+			else
+				currentRouteTrip = sktAlertsManager.sktAlertsEJBRemote
+						.getCurrentRouteTrip(vehicleComposite.getVehicle()
+								.getVin(), vehicleComposite.getVehicle()
+								.getCompanyId(), vehicleComposite.getVehicle()
+								.getBranchId());
+		} else {
+			currentRouteTrip = sktAlertsManager.sktAlertsEJBRemote
+					.getCurrentRouteTrip(
+							vehicleComposite.getVehicle().getVin(),
+							vehicleComposite.getVehicle().getCompanyId(),
+							vehicleComposite.getVehicle().getBranchId());
+		}
+		return currentRouteTrip;
+	}
+
+	public boolean isTimeInRange(Date tripStartTime, Date tripEndTime,
+			Date eventTimeStamp) {
+
+		Calendar calendarEventTime = Calendar.getInstance();
+		calendarEventTime.setTime(eventTimeStamp);
+		Calendar calendar = Calendar.getInstance();
+
+		calendar.setTime(tripStartTime);
+		calendar.set(Calendar.DATE, calendarEventTime.get(Calendar.DATE));
+		calendar.set(Calendar.MONTH, calendarEventTime.get(Calendar.MONTH));
+		calendar.set(Calendar.YEAR, calendarEventTime.get(Calendar.YEAR));
+
+		tripStartTime = calendar.getTime();
+		calendar.setTime(tripEndTime);
+		calendar.set(Calendar.DATE, calendarEventTime.get(Calendar.DATE));
+		calendar.set(Calendar.MONTH, calendarEventTime.get(Calendar.MONTH));
+		calendar.set(Calendar.YEAR, calendarEventTime.get(Calendar.YEAR));
+
+		tripEndTime = calendar.getTime();
+		LOGGER.info("SKTLog:MeiTrackDeviceHandler isTimeInRange "
+				+ tripStartTime.toString() + " and " + tripEndTime.toString()
+				+ " and " + eventTimeStamp.toString());
+
+		boolean isCurrentTrip = CommonUtil.isTimeInRange(tripStartTime,
+				tripEndTime, eventTimeStamp);
+		return isCurrentTrip;
+	}
+
+	private long getCardSwipedInterval(Studentdetails studentdetails,
+			Studentevent studentevent, int timeDiffInSec) {
+		Date studentlastupddate = studentdetails.getLatestEventTime();
+		Date eventTime = studentevent.getId().getEventTimeStamp();
+		boolean isSameDay = CommonUtil.isSameDay(studentlastupddate, eventTime);
+		long seconds = (eventTime.getTime() - studentlastupddate.getTime()) / 1000;
+		if (isSameDay && seconds > -timeDiffInSec && seconds <= timeDiffInSec) {
+			return seconds;
+		}
+		return 0;
+	}
+
+	public void getCurrentORupcomingRT(SKTAlertsManager sktAlertsManager,
+			VehicleComposite vehicleComposite, Date eventTimeStamp) {
+
+		Date tripEndTime = null;
+		Calendar calendarEventTime, calendarTripEndTime = null;
+		String vin = vehicleComposite.getVehicle().getVin();
+		LOGGER.info("SKTLog:MeiTrackDeviceHandler getCurrentORupcomingRT MeiTrackDeviceHandler.currentORupcomingRTMap.get(vin)="
+				+ MeiTrackDeviceHandler.currentORupcomingRTMap.get(vin));
+
+		if (MeiTrackDeviceHandler.currentORupcomingRTMap.get(vin) == null) {
+
+			Routetrip upcomingRoutetrip = sktAlertsManager.sktAlertsEJBRemote
+					.getUpcomingTrip(vehicleComposite.getVehicle().getVin(),
+							vehicleComposite.getVehicle().getCompanyId(),
+							vehicleComposite.getVehicle().getBranchId(),
+							eventTimeStamp);
+
+			if (upcomingRoutetrip != null) {
+				if (upcomingRoutetrip.getTripid() != null) {
+					Date tstafter = setDateForTripTime(eventTimeStamp,
+							upcomingRoutetrip.getTripStarttime(), 0);
+					Date tetafter = setDateForTripTime(eventTimeStamp,
+							upcomingRoutetrip.getTripEndtime(), 0);
+					upcomingRoutetrip.setTripStarttime(tstafter);
+					upcomingRoutetrip.setTripEndtime(tetafter);
+					LOGGER.info("SKTLog:MeiTrackDeviceHandler getCurrentORupcomingRT1 TripStarttime = "
+							+ upcomingRoutetrip.getTripStarttime()
+							+ " and TripEndTime = "
+							+ upcomingRoutetrip.getTripEndtime());
+				} else {
+					return;
+				}
+			}
+			MeiTrackDeviceHandler.currentORupcomingRTMap.put(vin,
+					upcomingRoutetrip);
+			boolean nextDayStatus = false;
+			if (MeiTrackDeviceHandler.isNextDay.get(vin) != null)
+				nextDayStatus = MeiTrackDeviceHandler.isNextDay.get(vin);
+
+			if (MeiTrackDeviceHandler.currentORupcomingRTMap.get(vin) == null
+					&& !nextDayStatus) {
+				Routetrip upcomingDayRoutetrip = sktAlertsManager.sktAlertsEJBRemote
+						.getUpcomingDayTrip(vehicleComposite.getVehicle()
+								.getVin(), vehicleComposite.getVehicle()
+								.getCompanyId(), vehicleComposite.getVehicle()
+								.getBranchId());
+				if (upcomingDayRoutetrip != null) {
+
+					LOGGER.info("SKTLog:MeiTrackDeviceHandler getCurrentORupcomingRT2 TripStarttime = "
+							+ upcomingDayRoutetrip.getTripStarttime()
+							+ " and TripEndTime = "
+							+ upcomingDayRoutetrip.getTripEndtime());
+
+					Date tstafter = setDateForTripTime(eventTimeStamp,
+							upcomingDayRoutetrip.getTripStarttime(), 1);
+					Date tetafter = setDateForTripTime(eventTimeStamp,
+							upcomingDayRoutetrip.getTripEndtime(), 1);
+					upcomingDayRoutetrip.setTripStarttime(tstafter);
+					upcomingDayRoutetrip.setTripEndtime(tetafter);
+				}
+				MeiTrackDeviceHandler.currentORupcomingRTMap.put(vin,
+						upcomingDayRoutetrip);
+				MeiTrackDeviceHandler.isNextDay.put(vin, true);
+			}
+		}
+
+		if (MeiTrackDeviceHandler.currentORupcomingRTMap.get(vin) != null) {
+			tripEndTime = MeiTrackDeviceHandler.currentORupcomingRTMap.get(vin)
+					.getTripEndtime();
+			calendarEventTime = Calendar.getInstance();
+			calendarEventTime.setTime(eventTimeStamp);
+			calendarTripEndTime = Calendar.getInstance();
+			calendarTripEndTime.setTime(tripEndTime);
+
+			Date endTimeDate = calendarTripEndTime.getTime();
+			boolean isCurrentTripExpired = eventTimeStamp.after(endTimeDate);
+			LOGGER.info("endTimeDate = " + endTimeDate.toString()
+					+ " and eventTimeStamp" + eventTimeStamp.toString());
+			if (isCurrentTripExpired) {
+
+				MeiTrackDeviceHandler.isNextDay.put(vin, false);
+				// sktAlertsManager.sktAlertsEJBRemote.clearAlertsEJBsession();
+				// sktAlertsManager.sktAlertsEJBRemote.clearSktAlertsEJBsession();
+				Routetrip upcomingRoutetrip = sktAlertsManager.sktAlertsEJBRemote
+						.getUpcomingTrip(
+								vehicleComposite.getVehicle().getVin(),
+								vehicleComposite.getVehicle().getCompanyId(),
+								vehicleComposite.getVehicle().getBranchId(),
+								eventTimeStamp);
+				if (upcomingRoutetrip != null) {
+					if (upcomingRoutetrip.getTripid() != null) {
+						Date tstafter = setDateForTripTime(eventTimeStamp,
+								upcomingRoutetrip.getTripStarttime(), 0);
+						Date tetafter = setDateForTripTime(eventTimeStamp,
+								upcomingRoutetrip.getTripEndtime(), 0);
+						upcomingRoutetrip.setTripStarttime(tstafter);
+						upcomingRoutetrip.setTripEndtime(tetafter);
+						LOGGER.info("SKTLog:MeiTrackDeviceHandler getCurrentORupcomingRT1 TripStarttime = "
+								+ upcomingRoutetrip.getTripStarttime()
+								+ " and TripEndTime = "
+								+ upcomingRoutetrip.getTripEndtime());
+					} else {
+						MeiTrackDeviceHandler.currentORupcomingRTMap.put(vin,
+								null);
+						return;
+					}
+				}
+				MeiTrackDeviceHandler.currentORupcomingRTMap.put(vin,
+						upcomingRoutetrip);
+				boolean nextDayStatus = false;
+				if (MeiTrackDeviceHandler.isNextDay.get(vin) != null)
+					nextDayStatus = MeiTrackDeviceHandler.isNextDay.get(vin);
+				if (MeiTrackDeviceHandler.currentORupcomingRTMap.get(vin) == null
+						&& !nextDayStatus) {
+					Routetrip upcomingDayRoutetrip = sktAlertsManager.sktAlertsEJBRemote
+							.getUpcomingDayTrip(vehicleComposite.getVehicle()
+									.getVin(), vehicleComposite.getVehicle()
+									.getCompanyId(), vehicleComposite
+									.getVehicle().getBranchId());
+					if (upcomingDayRoutetrip != null) {
+
+						Date tstafter = setDateForTripTime(eventTimeStamp,
+								upcomingDayRoutetrip.getTripStarttime(), 1);
+						Date tetafter = setDateForTripTime(eventTimeStamp,
+								upcomingDayRoutetrip.getTripEndtime(), 1);
+						upcomingDayRoutetrip.setTripStarttime(tstafter);
+						upcomingDayRoutetrip.setTripEndtime(tetafter);
+
+						LOGGER.info("SKTLog:MeiTrackDeviceHandler getCurrentORupcomingRT4 TripStarttime = "
+								+ upcomingDayRoutetrip.getTripStarttime()
+								+ " and TripEndTime = "
+								+ upcomingDayRoutetrip.getTripEndtime());
+					}
+					MeiTrackDeviceHandler.currentORupcomingRTMap.put(vin,
+							upcomingDayRoutetrip);
+					MeiTrackDeviceHandler.isNextDay.put(vin, true);
+				}
+			}
+		}
+		if (MeiTrackDeviceHandler.currentORupcomingRTMap.get(vin) != null) {
+			LOGGER.info("SKTLog:MeiTrackDeviceHandler getCurrentORupcomingRT getTripStarttime = "
+					+ MeiTrackDeviceHandler.currentORupcomingRTMap.get(vin)
+							.getTripStarttime());
+		}
+	}
+
+	private Position getPositionObject(Vehicleevent vehicleEvent, String imeiNo) {
+		Position position = new Position();
+		position.setDeviceId(Long.valueOf(imeiNo));
+		position.setRfid("1");
+		position.setTime(vehicleEvent.getId().getEventTimeStamp());
+		position.setLatitude(Double.valueOf(vehicleEvent.getLatitude()));
+		position.setLongitude(Double.valueOf(vehicleEvent.getLongitude()));
+		position.setSpeed(Double.valueOf(vehicleEvent.getSpeed()));
+		return position;
+	}
+
+	private Date setDateForTripTime(Date eventTimeStamp, Date tripTime,
+			int nextDay) {
+		Calendar eventTime = Calendar.getInstance();
+		eventTime.setTime(eventTimeStamp);
+
+		Calendar tripStartTime = Calendar.getInstance();
+		tripStartTime.setTime(tripTime);
+
+		tripStartTime.set(Calendar.YEAR, eventTime.get(Calendar.YEAR));
+		tripStartTime.set(Calendar.MONTH, eventTime.get(Calendar.MONTH));
+		tripStartTime
+				.set(Calendar.DATE, eventTime.get(Calendar.DATE) + nextDay);
+
+		return tripStartTime.getTime();
+	}
+}

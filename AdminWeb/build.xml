@@ -1,0 +1,282 @@
+<?xml version="1.0"?>
+<project
+    name="LTSAdminWeb"
+    basedir="."
+    default="deploy" >
+
+    <!-- Arguments to gwtc and devmode targets -->
+
+    <property
+        name="gwt.args"
+        value="" />
+    <!-- Configure path to GWT SDK -->
+
+    <property
+        name="gwt.sdk"
+        location="/home/ubuntu/gwt-2.5.0" />
+
+    <property
+        name="JBOSS"
+        value="/home/ubuntu/jboss_admin_9090" />
+
+    <property
+        name="warName"
+        value="LTSAdminWeb.war" />
+
+    <property
+        name="JBOSSLIB"
+        value="${JBOSS}/modules/javax" />
+
+    <property
+        name="gwtltmswebModule"
+        value="war/ltmsweb" />
+    
+<!--     <property -->
+<!--         name="gwtjeddexwebModule" -->
+<!--         value="war/jeddexweb" /> -->
+    
+<!--     <property -->
+<!--         name="gwtTracknServwebModule" -->
+<!--         value="war/trackNserveweb" /> -->
+
+    <path id="project.class.path" >
+
+        <pathelement location="war/WEB-INF/classes" />
+
+        <pathelement location="${gwt.sdk}/gwt-user.jar" />
+
+        <fileset
+            dir="${gwt.sdk}"
+            includes="gwt-dev*.jar" />
+        <!-- Add any additional non-server libs (such as JUnit) -->
+
+        <fileset
+            dir="war/WEB-INF/lib"
+            includes="**/*.jar" />
+        <!-- <fileset dir="/home/ubuntu/EIT/Deploy/gxt-2.2.6" includes="gxt-2.2.6-gwt22.jar"/> -->
+
+        <fileset
+            dir="../LTSAdminEAR/ear/lib"
+            includes="*.jar" />
+
+        <fileset
+            dir="../LTSAdminEAR/ear"
+            includes="*.jar" />
+         <fileset
+            dir="../LTSAdminEAR/"
+            includes="*.jar" />
+        
+
+        <fileset
+            dir="${JBOSSLIB}/persistence/api/main"
+            includes="*.jar" />
+
+        <fileset
+            dir="${JBOSSLIB}/ejb/api/main"
+            includes="*.jar" />
+
+        <fileset
+            dir="${JBOSSLIB}/servlet/api/main"
+            includes="*.jar" />
+
+        <fileset
+            dir="${JBOSSLIB}/mail/api/main"
+            includes="*.jar" />
+			
+		<fileset
+            dir="../LTSCommonUtil"
+            includes="util.jar" />
+		
+		<fileset
+            dir="../GWTCompileJar"
+            includes="*.jar" />	
+            
+<!-- 		<fileset -->
+<!--             dir="../GWTCompileJar/lib" -->
+<!--             includes="*.jar" />	 -->
+		
+
+    </path>
+    <!--
+<target name="libs"  description="Copy libs to WEB-INF/lib">
+    <copy todir="war/WEB-INF/lib" file="${gwt.sdk}/gwt-servlet.jar" />
+    <copy todir="war/WEB-INF/lib" file="${gwt.sdk}/gwt-servlet-deps.jar" />
+     Add any additional server libs that need to be copied 
+  </target>
+
+    -->
+
+    <target
+        name="clean"
+        description="Cleans this project" >
+
+        <delete
+            dir="war/WEB-INF/classes"
+            failonerror="false" />
+
+        <delete
+            dir="${gwtsktwebModule}"
+            failonerror="false" />
+		
+        <delete
+            dir="${gwtjeddexwebModule}"
+            failonerror="false" />
+        
+        <delete
+            dir="${gwtTracknServwebModule}"
+            failonerror="false" />
+        
+        <delete
+            dir="../LTSAdminEAR/ear/${warName}"
+            failonerror="false" />
+    </target>
+
+    <target
+        name="servercompile"
+        depends="clean"
+        description="Compile java source to bytecode" >
+
+        <mkdir dir="war/WEB-INF/classes" />
+
+        <javac
+            debug="true"
+            debuglevel="lines,vars,source"
+            destdir="war/WEB-INF/classes"
+            encoding="utf-8"
+            includes="**"
+            nowarn="true"
+            source="1.7"
+            srcdir="src"
+            target="1.7"
+includeantruntime="false"			>
+
+            <classpath refid="project.class.path" />
+        </javac>
+
+        <copy todir="war/WEB-INF/classes" >
+
+            <fileset
+                dir="src"
+                excludes="**/*.java" />
+        </copy>
+    </target>
+
+    <target
+        name="clientcompile"
+        depends="servercompile"
+        description="GWT compile to JavaScript (production mode)" >
+
+        <java
+            classname="com.google.gwt.dev.Compiler"
+            failonerror="true"
+            fork="true" >
+
+            <classpath>
+
+                <pathelement location="src" />
+
+                <path refid="project.class.path" />
+
+                <pathelement location="${gwt.sdk}/validation-api-1.0.0.GA.jar" />
+
+                <pathelement location="${gwt.sdk}/validation-api-1.0.0.GA-sources.jar" />
+            </classpath>
+<!--   add jvmarg -Xss16M or similar if you see a StackOverflowError 
+ -->
+
+            <jvmarg value="-Xmx512M" />
+
+            <arg line="-war" />
+
+            <arg value="war" />
+<!--   Additional arguments like -style PRETTY or -logLevel DEBUG 
+ -->
+
+            <arg line="${gwt.args}" />
+
+            <arg value="com.eiw.LTMSAdminWeb" />
+        </java>
+
+            </target>
+
+    <target
+        name="compile"
+        depends="clientcompile"
+        description="Build this project" />
+
+    <target
+        name="deploy"
+        depends="compile"
+        description="Deploy War to the EAR" >
+
+        <!-- <zip -->
+        <!-- basedir="war" -->
+        <!-- destfile="../LTSAdminEAR/ear/${warName}" /> -->
+
+        <delete
+            dir="../LTSAdminEAR/ear/${warName}"
+            failonerror="false" />
+
+        <mkdir dir="../LTSAdminEAR/ear/${warName}" />
+
+        <copy todir="../LTSAdminEAR/ear/${warName}" >
+
+            <fileset dir="war" />
+        </copy>
+
+        <delete
+            dir="../LTSAdminEAR/ear/LTSAdminEJB.jar"
+            failonerror="false" />
+    </target>
+
+<!--     <target -->
+<!--         name="devmode" -->
+<!--         depends="servercompile" -->
+<!--         description="Run development mode" > -->
+
+<!--         <java -->
+<!--             classname="com.google.gwt.dev.DevMode" -->
+<!--             failonerror="true" -->
+<!--             fork="true" > -->
+
+<!--             <classpath> -->
+
+<!--                 <pathelement location="src" /> -->
+
+<!--                 <path refid="project.class.path" /> -->
+
+<!--                 <pathelement location="${gwt.sdk}\validation-api-1.0.0.GA.jar" /> -->
+
+<!--                 <pathelement location="${gwt.sdk}\validation-api-1.0.0.GA-sources.jar" /> -->
+<!--             </classpath> -->
+
+<!--             <jvmarg value="-Xmx256M" /> -->
+
+<!--             <arg value="-startupUrl" /> -->
+
+<!--             <arg value="index.html" /> -->
+
+<!--             <arg line="-war" /> -->
+
+<!--             <arg value="war" /> -->
+<!--   Additional arguments like -style PRETTY or -logLevel DEBUG 
+ -->
+
+<!--             <arg line="${gwt.args}" /> -->
+
+<!--             <arg value="com.eiw.LTMSWeb" /> -->
+<!--         </java> -->
+<!--     </target> -->
+
+<!--     <target -->
+<!--         name="hosted" -->
+<!--         depends="devmode" -->
+<!--         description="Run development mode (NOTE: the &apos;hosted&apos; target is deprecated)" /> -->
+    <!--
+<target name="war" depends="clientcompile" description="Create a war file">
+    <zip destfile="${warName}" basedir="war"/>
+	</target>
+
+    -->
+
+</project>

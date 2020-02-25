@@ -1,0 +1,100 @@
+package com.eiw.admin.ejb;
+
+import java.util.List;
+
+import javax.ejb.Local;
+import javax.websocket.CloseReason;
+import javax.websocket.Session;
+
+import com.eiw.client.dto.CompanyDataAdmin;
+import com.eiw.client.dto.DashboardContentPerCB;
+import com.eiw.client.dto.OperatorData;
+import com.eiw.client.dto.VehicleData;
+import com.eiw.client.dto.VehicleIMEIDto;
+
+@Local
+public interface EMSAdminPortal {
+
+	DashboardContentPerCB authenticateUserAdmin(String corpId, String name,
+			String pass);
+
+	List<CompanyDataAdmin> getCompanyDetails(String suffix);
+
+	List<VehicleData> getBWUtilReport(String suffix, VehicleData vehicleData);
+
+	List<CompanyDataAdmin> getCompanyNames(String suffix);
+
+	String addCompanyFearures(List<CompanyDataAdmin> companyDataAdmins,
+			List<CompanyDataAdmin> companyDataAdmins1, String companyId);
+
+	List<CompanyDataAdmin> getCompanyFeatures(CompanyDataAdmin companyDataAdmin);
+
+	List<CompanyDataAdmin> getErrorLogInfo(CompanyDataAdmin companyDataAdmin);
+
+	List<CompanyDataAdmin> getLoginInfo(String suffix,
+			CompanyDataAdmin companyDataAdmin);
+
+	String sendEmail(String from, String to, String subject, String text);
+
+	String updateSMSCount(VehicleData vehicleData);
+
+	List<VehicleData> getSmsHistory(VehicleData vehicleData);
+
+	List<VehicleData> getSMSCount(String suffix);
+
+	String vehicleSummaryBulkExec(String fromDate, String toDate,
+			String companyName);
+
+	List<VehicleData> getLiveVehicles(String suffix);
+
+	List<VehicleData> getVehicleEventInfo(VehicleData vehicleData);
+
+	List<String> validatecompanyId();
+
+	List<CompanyDataAdmin> getCountryList(String companyId);
+
+	String addCompanyRegistration(CompanyDataAdmin companyData);
+
+	List<VehicleData> btnEnableDisable();
+
+	List<VehicleData> startBatchListener(String userId);
+
+	List<VehicleData> stopBatchListener(String userId);
+
+	String startSimulator(String imeiNo);
+
+	String stopSimulator(String imeiNo);
+
+	String updateLoginInfo(CompanyDataAdmin companyDataAdmin);
+
+	List<CompanyDataAdmin> getCompanyRegistration(String suffix);
+
+	List<OperatorData> getOperatorTelNo(String compName, String branchName,
+			String userName);
+
+	String sendSMS(String mobileNo, String msg);
+
+	List<VehicleIMEIDto> getVehilceIMEI(String suffix);
+
+	String stopApplication();
+
+	String editCompanyRegistration(CompanyDataAdmin companyData);
+
+	String deleteCompanyRegistration(CompanyDataAdmin companyData);
+
+	List<VehicleData> getCompanyIdDetails(String companyId);
+
+	String createTicket(String data);
+
+	void registerTicketManagementSession(Session session, String data);
+
+	void closeTicketManagementSession(Session session, CloseReason reason);
+
+	String addPptId(String data);
+
+	String rfidRegister(String data);
+
+	String programKeys(String data);
+	
+	String getOpenTicket(String data);
+}

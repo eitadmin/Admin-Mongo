@@ -1,0 +1,317 @@
+package com.eiw.alerts;
+
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+
+import com.eiw.device.ejb.VehicleComposite;
+import com.eiw.server.TimeZoneUtil;
+import com.eiw.server.fleettrackingpu.Alertconfig;
+import com.eiw.server.fleettrackingpu.Heartbeatevent;
+import com.eiw.server.fleettrackingpu.VehicleHasIo;
+import com.eiw.server.fleettrackingpu.Vehiclealerts;
+import com.eiw.server.fleettrackingpu.Vehicleevent;
+
+public class CheckBatteryVoltage implements CheckAlerts {
+
+	AlertsManager alertsManager;
+	Alertconfig alertConfig = null;
+	Date lastUpdatedTime;
+
+	public CheckBatteryVoltage(AlertsManager alertsManager1) {
+		alertsManager = alertsManager1;
+	}
+
+	public CheckBatteryVoltage(Alertconfig alertConfig, Date lastUpdatedTime) {
+		this.alertConfig = alertConfig;
+		this.lastUpdatedTime = lastUpdatedTime;
+	}
+
+	public void manageAlert(List<Vehicleevent> listOfEvents,
+			Alertconfig alertConfig, String vin, String plateNo) {
+		List<Vehiclealerts> vehiclealerts = new ArrayList<Vehiclealerts>();
+		String mobile = null;
+		int min = -1, max = -1;
+
+		// alert config for battery voltage Alert
+		String[] range = alertConfig.getAlertRange().split("_");
+		mobile = alertConfig.getSmsNumber();
+
+		if (range.length > 1) {
+			min = Integer.valueOf(range[0]);
+			max = Integer.valueOf(range[1]);
+		} else {
+			return;
+		}
+
+		Vehicleevent veLow = null, veHigh = null;
+		Vehicleevent ve0 = (Vehicleevent) listOfEvents.get(0);
+
+		int initLow = -1, initHigh = -1;
+		try {
+			initLow = (ve0.getBattery()).intValue();
+			initHigh = (ve0.getBattery()).intValue();
+		} catch (Exception e) {
+			return;
+		}
+
+		AlertsEJB.LOGGER.debug("Inside CheckBatteryVoltage Alert ->");
+		// For Low
+		for (int i = 0; i < listOfEvents.size(); i++) {
+			Vehicleevent ve = (Vehicleevent) listOfEvents.get(i);
+			int val = (ve.getBattery()).intValue();
+			if (val <= initLow) {
+				initLow = val;
+				veLow = ve;
+			}
+		}
+		initLow = initLow / 1000;
+		// For High
+		for (int i = 0; i < listOfEvents.size(); i++) {
+			Vehicleevent ve = (Vehicleevent) listOfEvents.get(i);
+			int val = (ve.getBattery()).intValue();
+			if (val >= initHigh) {
+				initHigh = val;
+				veHigh = ve;
+			}
+		}
+		initHigh = initHigh / 1000;
+		if ((initLow == -1) || (initHigh == -1)) {
+			return;
+		}
+
+		// Disconnect Alert
+		if (initLow == 0) {
+			try {
+				Date date = ve0.getId().getEventTimeStamp();
+				String latlng = ve0.getLatitude() + "," + ve0.getLongitude();
+				String time = TimeZoneUtil.getStrTZDateTime(date);
+				String description = "Alert%0DType : Battery Disconnect%0Dvehicle:"
+						+ plateNo
+						+ "%0DBattery: 0 v%0DLimit : 10 v%0DTime:"
+						+ time;
+				Vehiclealerts va = new Vehiclealerts();
+				va.setAlerttype(AlertsManager.enumAlerts.OVERSPEED.name());
+				va.setDescription(description);
+				va.setEventTimeStamp(date);
+				va.setLatlng(latlng);
+				va.setSmsmobile(mobile);
+				va.setVin(vin);
+				va.setShowstatus(false);
+				vehiclealerts.add(va);
+
+			} catch (Exception e) {
+				return;
+			}
+		}
+
+		// Low Alert
+		if ((veLow != null) && (initLow < min)) {
+			try {
+				Date date = veLow.getId().getEventTimeStamp();
+				String latlng = veLow.getLatitude() + ","
+						+ veLow.getLongitude();
+				String time = TimeZoneUtil.getStrTZDateTime(date);
+
+				String description = "Alert%0DType : Low Battery%0Dvehicle:"
+						+ plateNo + "%0DBattery: " + initLow + " v%0DLimit : "
+						+ min + " V - " + max + " V %0DTime:" + time;
+				Vehiclealerts va = new Vehiclealerts();
+				va.setAlerttype(AlertsManager.enumAlerts.BATTERY.name());
+				va.setDescription(description);
+				va.setEventTimeStamp(date);
+				va.setLatlng(latlng);
+				va.setSmsmobile(mobile);
+				va.setVin(vin);
+				va.setShowstatus(false);
+				vehiclealerts.add(va);
+			} catch (Exception e) {
+				return;
+			}
+		}
+
+		// High Alert
+		if ((veHigh != null) && (initHigh > max)) {
+			try {
+				Date date = veHigh.getId().getEventTimeStamp();
+				String latlng = veHigh.getLatitude() + ","
+						+ veHigh.getLongitude();
+				String time = TimeZoneUtil.getStrTZDateTime(date);
+
+				String description = "Alert%0DType : High Battery%0Dvehicle:"
+						+ plateNo + "%0DBattery: " + initHigh + " v%0DLimit : "
+						+ min + " V - " + max + " V %0DTime:" + time;
+				Vehiclealerts va = new Vehiclealerts();
+				va.setAlerttype(AlertsManager.enumAlerts.BATTERY.name());
+				va.setDescription(description);
+				va.setEventTimeStamp(date);
+				va.setLatlng(latlng);
+				va.setSmsmobile(mobile);
+				va.setVin(vin);
+				va.setShowstatus(false);
+				vehiclealerts.add(va);
+			} catch (Exception e) {
+				return;
+			}
+		}
+
+		if (!vehiclealerts.isEmpty()) {
+			lastUpdatedTime = alertsManager.persistVehicleAlert(alertConfig,
+					vehiclealerts, lastUpdatedTime);
+		}
+
+	}
+
+	@Override
+	public String manageAlerts(List<Vehicleevent> vehicleEvents, String vin,
+			String plateNo, List<VehicleHasIo> vehicleHasIo, int id,
+			VehicleComposite vehicleComposite) {
+		List<Vehiclealerts> vehiclealerts = new ArrayList<Vehiclealerts>();
+		String mobile = null;
+		int min = -1, max = -1;
+
+		// alert config for battery voltage Alert
+		String[] range = alertConfig.getAlertRange().split("_");
+		mobile = alertConfig.getSmsNumber();
+
+		if (range.length > 1) {
+			min = Integer.valueOf(range[0]);
+			max = Integer.valueOf(range[1]);
+		}
+
+		Vehicleevent veLow = null, veHigh = null;
+		Vehicleevent ve0 = (Vehicleevent) vehicleEvents.get(0);
+
+		int initLow = -1, initHigh = -1;
+		try {
+			initLow = (ve0.getBattery()).intValue();
+			initHigh = (ve0.getBattery()).intValue();
+		} catch (Exception e) {
+
+		}
+
+		AlertsEJB.LOGGER.debug("Inside CheckBatteryVoltage Alert ->");
+		// For Low
+		for (int i = 0; i < vehicleEvents.size(); i++) {
+			Vehicleevent ve = (Vehicleevent) vehicleEvents.get(i);
+			int val = (ve.getBattery()).intValue();
+			if (val <= initLow) {
+				initLow = val;
+				veLow = ve;
+			}
+		}
+		initLow = initLow / 1000;
+		// For High
+		for (int i = 0; i < vehicleEvents.size(); i++) {
+			Vehicleevent ve = (Vehicleevent) vehicleEvents.get(i);
+			int val = (ve.getBattery()).intValue();
+			if (val >= initHigh) {
+				initHigh = val;
+				veHigh = ve;
+			}
+		}
+		initHigh = initHigh / 1000;
+		if ((initLow == -1) || (initHigh == -1)) {
+
+		}
+
+		// Disconnect Alert
+		if (initLow == 0) {
+			try {
+				Date date = ve0.getId().getEventTimeStamp();
+				String latlng = ve0.getLatitude() + "," + ve0.getLongitude();
+				String time = TimeZoneUtil.getStrTZDateTime(date);
+				String description = "Alert%0DType : Battery Disconnect%0Dvehicle:"
+						+ plateNo
+						+ "%0DBattery: 0 v%0DLimit : 10 v%0DTime:"
+						+ time;
+				Vehiclealerts va = new Vehiclealerts();
+				va.setAlerttype(AlertsManager.enumAlerts.OVERSPEED.name());
+				va.setDescription(description);
+				va.setEventTimeStamp(date);
+				va.setLatlng(latlng);
+				va.setSmsmobile(mobile);
+				va.setVin(vin);
+				va.setShowstatus(false);
+				vehiclealerts.add(va);
+
+			} catch (Exception e) {
+			}
+		}
+
+		// Low Alert
+		if ((veLow != null) && (initLow < min)) {
+			try {
+				Date date = veLow.getId().getEventTimeStamp();
+				String latlng = veLow.getLatitude() + ","
+						+ veLow.getLongitude();
+				String time = TimeZoneUtil.getStrTZDateTime(date);
+
+				String description = "Alert%0DType : Low Battery%0Dvehicle:"
+						+ plateNo + "%0DBattery: " + initLow + " v%0DLimit : "
+						+ min + " V - " + max + " V %0DTime:" + time;
+				Vehiclealerts va = new Vehiclealerts();
+				va.setAlerttype(AlertsManager.enumAlerts.BATTERY.name());
+				va.setDescription(description);
+				va.setEventTimeStamp(date);
+				va.setLatlng(latlng);
+				va.setSmsmobile(mobile);
+				va.setVin(vin);
+				va.setShowstatus(false);
+				vehiclealerts.add(va);
+			} catch (Exception e) {
+			}
+		}
+
+		// High Alert
+		if ((veHigh != null) && (initHigh > max)) {
+			try {
+				Date date = veHigh.getId().getEventTimeStamp();
+				String latlng = veHigh.getLatitude() + ","
+						+ veHigh.getLongitude();
+				String time = TimeZoneUtil.getStrTZDateTime(date);
+
+				String description = "Alert%0DType : High Battery%0Dvehicle:"
+						+ plateNo + "%0DBattery: " + initHigh + " v%0DLimit : "
+						+ min + " V - " + max + " V %0DTime:" + time;
+				Vehiclealerts va = new Vehiclealerts();
+				va.setAlerttype(AlertsManager.enumAlerts.BATTERY.name());
+				va.setDescription(description);
+				va.setEventTimeStamp(date);
+				va.setLatlng(latlng);
+				va.setSmsmobile(mobile);
+				va.setVin(vin);
+				va.setShowstatus(false);
+				vehiclealerts.add(va);
+			} catch (Exception e) {
+
+			}
+		}
+
+		if (!vehiclealerts.isEmpty()) {
+			lastUpdatedTime = alertsManager.persistVehicleAlert(alertConfig,
+					vehiclealerts, lastUpdatedTime);
+		}
+
+		return null;
+	}
+
+	@Override
+	public void addAlertManager(AlertsManager alertsManager) {
+		this.alertsManager = alertsManager;
+
+	}
+
+	@Override
+	public void setLastUpdatedTime(Date lastUpdated) {
+		// TODO Auto-generated method stub
+
+	}
+
+	@Override
+	public String manageHbAlerts(Heartbeatevent heartbeatevent, String vin,
+			String PlateNo, VehicleComposite vehicleComposite) {
+		// TODO Auto-generated method stub
+		return null;
+	}
+}

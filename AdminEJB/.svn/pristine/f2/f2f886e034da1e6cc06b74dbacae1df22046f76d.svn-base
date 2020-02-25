@@ -1,0 +1,124 @@
+package com.eiw.alerts;
+
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import com.eiw.device.ejb.VehicleComposite;
+import com.eiw.server.TimeZoneUtil;
+import com.eiw.server.fleettrackingpu.Alertconfig;
+import com.eiw.server.fleettrackingpu.Heartbeatevent;
+import com.eiw.server.fleettrackingpu.VehicleHasIo;
+import com.eiw.server.fleettrackingpu.Vehiclealerts;
+import com.eiw.server.fleettrackingpu.Vehicleevent;
+
+public class CheckDeviceTempered implements CheckAlerts {
+
+	AlertsEJBRemote alertsEJBRemote = null;
+	AlertsManager alertsManager;
+	Alertconfig alertConfig = null;
+	Date lastUpdatedTime;
+
+	public CheckDeviceTempered(Alertconfig alertConfig, Date lastUpdatedTime) {
+		this.alertConfig = alertConfig;
+		this.lastUpdatedTime = lastUpdatedTime;
+	}
+
+	@Override
+	public String manageAlerts(List<Vehicleevent> vehicleEvents, String vin,
+			String plateNo, List<VehicleHasIo> vehicleHasIo, int id,
+			VehicleComposite vehicleComposite) {
+
+		List<Vehiclealerts> vehiclealerts = new ArrayList<Vehiclealerts>();
+		String address = null;
+		String description = null;
+		String latLngLink = null;
+		AlertsEJB.LOGGER.debug("Inside CheckDeviceTemperd Alert ->");
+		if (vehicleComposite.getDeviceModel().equalsIgnoreCase("AIS140")) {
+			for (Vehicleevent ve : vehicleEvents) {
+				String deviceData = ve.getTags();
+				if (deviceData.startsWith("{")) {
+
+					try {
+						JSONObject obj = new JSONObject(deviceData);
+						if (obj.has("packetType")
+								&& obj.getString("packetType")
+										.equalsIgnoreCase("DT")) {
+							String mobile2 = null;
+							mobile2 = alertConfig.getSmsNumber();
+							String eventTime = TimeZoneUtil.getStrTZDateTime(ve
+									.getId().getEventTimeStamp());
+							address = alertsEJBRemote.getAddress(
+									ve.getLatitude() + "", ve.getLongitude()
+											+ "");
+							latLngLink = "http://maps.google.com/maps?q="
+									+ ve.getLatitude() + ","
+									+ ve.getLongitude();
+							if (address.length() > 65) {
+								address = address.substring(0, 65);
+								address += "..";
+							}
+							if (!address.equalsIgnoreCase("OVER_QUERY_LIMIT")) {
+								description = "Alert%0DType : DEVICETEMPERD%0DVehicle:"
+										+ plateNo
+										+ "%0D%0DTime:"
+										+ eventTime
+										+ "%0D%0DAddress:" + address;
+							} else {
+								description = "Alert%0DType : DEVICETEMPERD%0DVehicle:"
+										+ plateNo
+										+ "%0D%0DTime:"
+										+ eventTime
+										+ "%0D%0DLat,Lng:" + latLngLink;
+							}
+							Vehiclealerts va = new Vehiclealerts();
+							va.setAlerttype("DEVICE TEMPERD");
+							va.setDescription(description);
+							va.setEventTimeStamp(ve.getId().getEventTimeStamp());
+							va.setLatlng(ve.getLatitude() + ","
+									+ ve.getLongitude());
+							va.setSmsmobile(mobile2);
+							va.setVin(vin);
+							va.setShowstatus(false);
+							vehiclealerts.add(va);
+
+						}
+					} catch (JSONException e1) {
+						// TODO Auto-generated catch block
+						e1.printStackTrace();
+					}
+				}
+			}
+			if (!vehiclealerts.isEmpty()) {
+				lastUpdatedTime = alertsManager.persistVehicleAlert(
+						alertConfig, vehiclealerts, lastUpdatedTime);
+			}
+		}
+		return null;
+
+	}
+
+	@Override
+	public void addAlertManager(AlertsManager alertsManager) {
+		this.alertsManager = alertsManager;
+		this.alertsEJBRemote = alertsManager.alertsEJBRemote;
+
+	}
+
+	@Override
+	public void setLastUpdatedTime(Date lastUpdated) {
+		// TODO Auto-generated method stub
+
+	}
+
+	@Override
+	public String manageHbAlerts(Heartbeatevent heartbeatevent, String vin,
+			String PlateNo, VehicleComposite vehicleComposite) {
+		// TODO Auto-generated method stub
+		return null;
+	}
+
+}

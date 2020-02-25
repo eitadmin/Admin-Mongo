@@ -1,0 +1,690 @@
+package com.eiw.device.handler;
+
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.math.BigInteger;
+import java.net.Socket;
+import java.net.SocketTimeoutException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.Date;
+import java.util.List;
+
+import org.jboss.logging.Logger;
+import org.json.JSONObject;
+
+import com.eiw.client.dto.VehicleData;
+import com.eiw.device.ejb.FleetTrackingDeviceListenerBORemote;
+import com.eiw.device.ejb.VehicleComposite;
+import com.eiw.device.handler.method.SKTHandlerMethods;
+import com.eiw.device.listener.ListenerStarter;
+import com.eiw.device.ruptela.FmPro3Data;
+import com.eiw.device.ruptela.GpsElement;
+import com.eiw.server.TimeZoneUtil;
+import com.eiw.server.bo.BOFactory;
+import com.eiw.server.fleettrackingpu.Odometercalc;
+import com.eiw.server.fleettrackingpu.OdometercalcId;
+import com.eiw.server.fleettrackingpu.Vehicle;
+import com.eiw.server.fleettrackingpu.Vehicleevent;
+import com.eiw.server.fleettrackingpu.VehicleeventId;
+
+public class RuptelaDeviceHandler extends DeviceHandler {
+
+	private static final Logger LOGGER = Logger.getLogger("listener");
+	FleetTrackingDeviceListenerBORemote fleetTrackingDeviceListenerBO = BOFactory
+			.getFleetTrackingDeviceListenerBORemote();
+	private static String commandStatus;
+	private String arr[] = { "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
+			"A", "B", "C", "D", "E", "F" };
+	private SKTHandlerMethods sktHandlerMethods;
+	private VehicleData vdata;
+
+	@Override
+	protected void handleDevice() {
+		LOGGER.info("Entered Ruptela five mins Handle Device:" + new Date());
+		sktHandlerMethods = new SKTHandlerMethods();
+
+		FleetTrackingDeviceListenerBORemote fleetTrackingDeviceListenerBO = BOFactory
+				.getFleetTrackingDeviceListenerBORemote();
+		DataInputStream clientSocketDis = null;
+		DataOutputStream dos = null;
+		try {
+			// read() call on the InputStream associated with this Socket will
+			// block for only this amount of time.
+			// If the timeout expires, a java.net.SocketTimeoutException is
+			// raised
+			clientSocket.setSoTimeout(300000);
+			// Returns an input stream for this socket.
+			clientSocketDis = new DataInputStream(clientSocket.getInputStream());
+			dos = new DataOutputStream(clientSocket.getOutputStream());
+
+			FmPro3Data initialData = new FmPro3Data(clientSocketDis);
+			initialData.read();
+
+			String imeiNo = initialData.getImeiString();
+			/*
+			 * Since Ruptela Converter Gives 14 digits imeiNo as 15 digits
+			 * imeiNo we are adding trailing 0. As changing imeiNo (i.e removing
+			 * trailing 0's) of all installed devices is difficult we proceed
+			 * with this approach.
+			 */
+			if (imeiNo.length() < 15 && imeiNo.startsWith("1")) {
+				imeiNo = "0" + imeiNo;
+			}
+			VehicleComposite vehicleComposite = fleetTrackingDeviceListenerBO
+					.getVehicle(imeiNo);
+			// Returns an output stream for this socket.
+			if (vehicleComposite == null) {
+				LOGGER.error("Received Ruptela IMEI No is invalid... returning... "
+						+ imeiNo);
+				return;
+			}
+
+			super.deviceImei = imeiNo;
+			ListenerStarter.ruptelaDeviceHandlerMap.put(deviceImei, this);
+
+			dos.write(initialData.getResponsePacket());
+			insertService(vehicleComposite, initialData,
+					initialData.getLenght(), fleetTrackingDeviceListenerBO,
+					imeiNo);
+
+			while (true) {
+				FmPro3Data data = new FmPro3Data(clientSocketDis);
+				data.read();
+
+				if (data.getCommand() != 1) {
+					if (data.getCommand() == 7)
+						commandStatus = data.getResponseForCommand();
+					continue;
+				}
+				dos.write(data.getResponsePacket());
+				insertService(vehicleComposite, data, data.getLenght(),
+						fleetTrackingDeviceListenerBO, imeiNo);
+			}
+		} catch (SocketTimeoutException e) {
+			LOGGER.error("SocketTimeoutExceptiontion while receiving the Message "
+					+ e);
+		} catch (Exception e) {
+			LOGGER.error("Exception while receiving the Message Ruptela " + e);
+			e.printStackTrace();
+		} finally {
+			if (deviceImei != null) {
+				ListenerStarter.ruptelaDeviceHandlerMap.remove(deviceImei);
+			}
+			cleanUpSockets(clientSocket, clientSocketDis, dos);
+			LOGGER.info("DeviceCommunicatorThread:DeviceCommunicator Completed");
+		}
+	}
+
+	private List<Vehicleevent> prepareVehicleEvents(Vehicle vehicle,
+			FmPro3Data data, long byteTrx,
+			FleetTrackingDeviceListenerBORemote fleetTrackingDeviceListenerBO,
+			String imeiNo, VehicleComposite vehicleComposite) {
+		vdata = new VehicleData();
+		Odometercalc odometercalc = new Odometercalc();
+		OdometercalcId id = new OdometercalcId();
+		long odometerValue;
+		String deviceModel = vehicleComposite.getDeviceModel();
+		String previousOdometer = fleetTrackingDeviceListenerBO
+				.previousOdometer(vehicle.getVin(), imeiNo);
+		Vehicleevent prevVE = MeiTrackDeviceHandler.getPrevVE(vehicle.getVin());
+		id.setVin(vehicle.getVin());
+		id.setImeiNo(imeiNo);
+		odometercalc.setDeviceModel(deviceModel);
+
+		try {
+			LOGGER.info("PreparevehicleEvents: " + "Vehicle" + vehicle
+					+ "FmPro3Data" + data + "byteTrx" + byteTrx);
+			String region = vehicleComposite.getTimeZoneRegion();
+			String[] reverseSetting = null;
+			if (vehicleComposite.getVehicle().getReverseSetting() != null) {
+				reverseSetting = (vehicleComposite.getVehicle()
+						.getReverseSetting()).split("|");
+			}
+			List<Vehicleevent> vehicleEvents = new ArrayList<Vehicleevent>();
+			int gpsElementCount = (int) data.getGpsData().getNumberOfrecords();
+			// Looping for each received gps element
+			GpsElement[] elements = data.getGpsData().getGpsElements();
+			System.out.println("SIZE OF INPUT DATA" + gpsElementCount);
+			// String prevTimeStamp = "", currTimeStamp;
+			for (int i = 0; i != gpsElementCount; i++) {
+				// currTimeStamp = TimeZoneUtil.getDateTimeZone(
+				// new Date(elements[i].getTimestamp()), region)
+				// .toString();
+				// if (!prevTimeStamp.equalsIgnoreCase(currTimeStamp)) {
+				Vehicleevent vehicleEvent = new Vehicleevent();
+				VehicleeventId vehicleeventId = new VehicleeventId();
+				try {
+					Double latitude = (double) elements[i].getLatitude();
+					latitude = (double) Math.round(latitude * 10000) / 10000;
+					Double longitude = (double) elements[i].getLongitude();
+					longitude = (double) Math.round(longitude * 10000) / 10000;
+					vehicleEvent.setLongitude(longitude);
+					vehicleEvent.setLatitude(latitude);
+				} catch (Exception e) {
+					LOGGER.error("PreparevehicleEvents: FmPro3Data " + e
+							+ "\n Input is =" + elements[i].getLatitude() + ","
+							+ elements[i].getLongitude());
+					return null;
+				}
+				vehicleeventId.setEventTimeStamp(TimeZoneUtil.getDateTimeZone(
+						new Date(elements[i].getTimestamp()), region));
+				vehicleEvent.setSpeed((int) elements[i].getSpeed() <= 7 ? 0
+						: (int) elements[i].getSpeed());
+				vehicleeventId.setVin(vehicle.getVin());
+				vehicleEvent.setBytesTrx(byteTrx);
+				vehicleEvent.setDirection((int) elements[i].getAngle());
+				vehicleEvent.setId(vehicleeventId);
+				// vehicleEvent.setEventSource(avlData.getTriggeredPropertyId());
+				vehicleEvent.setPriority((int) elements[i].getPriority());
+				vehicleEvent.setServerTimeStamp(TimeZoneUtil.getDateTimeZone(
+						new Date(), region));
+
+				String ioElement = elements[i].getInputs().replace("{", "");
+				ioElement = ioElement.replace("}}", "");
+				String[] ioElements = ioElement.split("},");
+				String ioEvents = "", tag = "";
+				JSONObject tempSensor = new JSONObject();
+
+				for (String io : ioElements) {
+					String[] ioProperty = io.split(",");
+					System.out.println(ioProperty[0] + "=" + ioProperty[1]);
+					// if (ioEvents.equalsIgnoreCase("")) {
+					// ioEvents = ioProperty[0] + "=" + ioProperty[1];
+					// } else {
+					// ioEvents = ioEvents + "," + ioProperty[0] + "="
+					// + ioProperty[1];
+					// }
+					ioEvents = iOEventPreparation(ioEvents, ioProperty[0],
+							ioProperty[1], fleetTrackingDeviceListenerBO,
+							vehicle.getVin(), vehicle.getCompanyId(),
+							vehicle.getBranchId());
+
+					if (ioProperty[0].equalsIgnoreCase("78")) {
+
+						long tempSensor1 = (short) Integer.parseInt(Integer
+								.toHexString(Integer.parseInt(ioProperty[1])),
+								16);
+
+						// if (prevVE != null && prevVE.getTempSensor1() !=
+						// null) {
+						// long prevTempSensor1 = prevVE.getTempSensor1();
+						// long diff = (tempSensor1 - prevTempSensor1) / 10;
+						// if (diff < 10)
+						// vehicleEvent.setTempSensor1(tempSensor1);
+						// else
+						// vehicleEvent.setTempSensor1(prevTempSensor1);
+						// } else {
+						// vehicleEvent.setTempSensor1(tempSensor1);
+						// }
+						// if (vehicleEvent.getTempSensor1() != null) {
+
+						vehicleEvent.setTempSensor1(tempSensor1);
+
+						tempSensor.put("TEMP1", String.valueOf(tempSensor1));
+
+						// if (!tag.equalsIgnoreCase(""))
+						// tag += ",";
+						// tag += "TEMP1:"
+						// + String.valueOf(vehicleEvent
+						// .getTempSensor1());
+						// }
+					} else if (ioProperty[0].equalsIgnoreCase("79")) {
+						long tempSensor2 = (short) Integer.parseInt(Integer
+								.toHexString(Integer.parseInt(ioProperty[1])),
+								16);
+						vehicleEvent.setTempSensor2(tempSensor2);
+
+						tempSensor.put("TEMP2", String.valueOf(tempSensor2));
+						// if (ioProperty[1] != null) {
+						// if (!tag.equalsIgnoreCase(""))
+						// tag += ",";
+						// tag += "TEMP2:" + ioProperty[1];
+						// }
+					} else if (ioProperty[0].equalsIgnoreCase("80")) {
+						long tempSensor3 = (short) Integer.parseInt(Integer
+								.toHexString(Integer.parseInt(ioProperty[1])),
+								16);
+						vehicleEvent.setTempSensor3(tempSensor3);
+
+						tempSensor.put("TEMP3", String.valueOf(tempSensor3));
+
+						// if (ioProperty[1] != null) {
+						// if (!tag.equalsIgnoreCase(""))
+						// tag += ",";
+						// tag += "TEMP3:" + ioProperty[1];
+						// }
+					} else if (ioProperty[0].equalsIgnoreCase("74")) {
+						long tempSensor4 = (short) Integer.parseInt(Integer
+								.toHexString(Integer.parseInt(ioProperty[1])),
+								16);
+
+						tempSensor.put("TEMP4", String.valueOf(tempSensor4));
+
+						// if (ioProperty[1] != null) {
+						// if (!tag.equalsIgnoreCase(""))
+						// tag += ",";
+						// tag += "TEMP4:" + ioProperty[1];
+						// }
+					} else if (ioProperty[0].equalsIgnoreCase("65")) {
+						odometerValue = Long.valueOf(ioProperty[1]);
+						// LOGGER.error("INFO Current cumulative Odometer from
+						// device:"
+						// + odometerValue + " vin :" + vehicle.getVin());
+						if (previousOdometer != null
+								&& !previousOdometer.equalsIgnoreCase("null")) {
+							if (Long.valueOf(previousOdometer) > odometerValue) {
+								return null;
+							}
+							vehicleEvent.setOdometer(odometerValue
+									- Long.valueOf(previousOdometer));
+							id.setCurOdometerVal(odometerValue
+									- Long.valueOf(previousOdometer));
+							// LOGGER.error("INFO Previous Odometer :"
+							// + previousOdometer);
+							// LOGGER.error("INFO Odometer vehicleevent :"
+							// + vehicleEvent.getOdometer());
+						} else {
+							vehicleEvent.setOdometer(odometerValue);
+							id.setCurOdometerVal(odometerValue);
+							// LOGGER.error("INFO ELSE PART Odometer
+							// vehicleevent :"
+							// + vehicleEvent.getOdometer());
+						}
+						odometercalc.setOdometerActual(odometerValue);
+						odometercalc.setLastUpdDt(vehicleeventId
+								.getEventTimeStamp());
+						odometercalc.setId(id);
+					} else if (ioProperty[0].equalsIgnoreCase("29")) {
+						vehicleEvent.setBattery(Long.parseLong(ioProperty[1]));
+						vehicleEvent.setAi3(Integer.parseInt(ioProperty[1]));
+					} else if (ioProperty[0].equalsIgnoreCase("22")) {
+						vehicleEvent.setAi1(Integer.parseInt(ioProperty[1]));
+					} else if (ioProperty[0].equalsIgnoreCase("23")) {
+						vehicleEvent.setAi2(Integer.parseInt(ioProperty[1]));
+					} /*
+					 * else if (ioProperty[0].equalsIgnoreCase("11")) {
+					 * vehicleEvent .setAi3(Integer.parseInt(ioProperty[1])); }
+					 * else if (ioProperty[0].equalsIgnoreCase("19")) {
+					 * vehicleEvent .setAi4(Integer.parseInt(ioProperty[1])); }
+					 */else if (ioProperty[0].equalsIgnoreCase("2")) {
+						vehicleEvent.setEngine((ioProperty[1].trim()
+								.equalsIgnoreCase("1")) ? true : false);
+						vehicleEvent.setDi1(Integer.parseInt(ioProperty[1]));
+					} else if (ioProperty[0].equalsIgnoreCase("3")) {
+						if (vehicleComposite.getVehicle().getReverseSetting() != null
+								&& reverseSetting[0].equalsIgnoreCase("1")) {
+							if (vehicleEvent.getEngine()) {
+								if ((Integer.parseInt(ioProperty[1])) == 1)
+									vehicleEvent.setDi2(0);
+								else
+									vehicleEvent.setDi2(1);
+							} else {
+								vehicleEvent.setDi2(0);
+							}
+						} else {
+							vehicleEvent
+									.setDi2(Integer.parseInt(ioProperty[1]));
+						}
+					} else if (ioProperty[0].equalsIgnoreCase("4")) {
+						if (vehicleComposite.getVehicle().getReverseSetting() != null
+								&& reverseSetting[1].equalsIgnoreCase("1")) {
+
+							if (vehicleEvent.getEngine()) {
+								if ((Integer.parseInt(ioProperty[1])) == 1)
+									vehicleEvent.setDi3(0);
+								else
+									vehicleEvent.setDi3(1);
+							} else {
+								vehicleEvent.setDi3(0);
+							}
+						} else {
+							vehicleEvent
+									.setDi3(Integer.parseInt(ioProperty[1]));
+						}
+					} else if (ioProperty[0].equalsIgnoreCase("5")) {
+						if (vehicleComposite.getVehicle().getReverseSetting() != null
+								&& reverseSetting[2].equalsIgnoreCase("1")) {
+
+							if (vehicleEvent.getEngine()) {
+								if ((Integer.parseInt(ioProperty[1])) == 1)
+									vehicleEvent.setDi4(0);
+								else
+									vehicleEvent.setDi4(1);
+							} else {
+								vehicleEvent.setDi4(0);
+							}
+						} else {
+							vehicleEvent
+									.setDi4(Integer.parseInt(ioProperty[1]));
+						}
+						// if (vehicleEvent.getDi4() == 1) {
+						// Map<String, StudentData> studentDetailsNStatusMap =
+						// fleetTrackingDeviceListenerBO
+						// .getStudentDetailsMap(vehicle);
+						// if (studentDetailsNStatusMap.size() != 0) {
+						// fleetTrackingDeviceListenerBO
+						// .busAlertsForParents(vehicleEvent,
+						// studentDetailsNStatusMap, vehicle);
+						// }
+						// }
+					} else if (ioProperty[0].equalsIgnoreCase("135")) {
+						String eventsBrake = Integer.toBinaryString(Integer
+								.parseInt(ioProperty[1]));
+						eventsBrake = ("00000000" + eventsBrake)
+								.substring(eventsBrake.length());
+						vdata.setHarshBraking(String.valueOf(Integer.parseInt(
+								eventsBrake.substring(0, 4), 2)));
+						vdata.setExtremeBraking(String.valueOf(Integer
+								.parseInt(eventsBrake.substring(4), 2)));
+					} else if (ioProperty[0].equalsIgnoreCase("143")) {
+						vdata.setCorneringLimit(ioProperty[1]);
+					} else if (ioProperty[0].equalsIgnoreCase("251")) {
+						vehicleEvent.setEngine((ioProperty[1].trim()
+								.equalsIgnoreCase("1")) ? true : false);
+						vehicleEvent.setDi1(Integer.parseInt(ioProperty[1]));
+					}
+				}
+				vehicleEvent.setIoevent(ioEvents);
+				vehicleEvent.setTags(tempSensor.toString());
+				if (vehicleEvent.getLatitude() < -200
+						&& vehicleEvent.getLongitude() < -200) {
+					if (prevVE != null && prevVE.getLatitude() > 0
+							&& prevVE.getLongitude() > 0) {
+						LOGGER.info("Ruptela Without GPS");
+						vehicleEvent.getId().setEventTimeStamp(
+								vehicleEvent.getServerTimeStamp());
+						vehicleEvent.setLongitude(prevVE.getLongitude());
+						vehicleEvent.setLatitude(prevVE.getLatitude());
+						vehicleEvent.setDirection(prevVE.getDirection());
+
+					} else {
+						return null;
+					}
+				}
+				vehicleEvents.add(vehicleEvent);
+				fleetTrackingDeviceListenerBO.persistOdometerCalc(odometercalc);
+				previousOdometer = String.valueOf(odometercalc
+						.getOdometerActual());
+				// prevTimeStamp = currTimeStamp;
+				// }
+			}
+			return vehicleEvents;
+		} catch (Exception e) {
+			LOGGER.error("RuptelaDeviceProtocolHandler: PreparevehicleEvents: FmPro3Data String General"
+					+ e);
+			e.printStackTrace();
+			return null;
+		}
+	}
+
+	private String iOEventPreparation(String ioEvents, String ioProperty0,
+			String ioProperty1,
+			FleetTrackingDeviceListenerBORemote fleetTrackingDeviceListenerBO,
+			String vin, String companyId, String branchId) {
+		String ioEve = "";
+		String iButtonValue = "";
+		if (ioEvents.equalsIgnoreCase("")) {
+			if (ioProperty0.equalsIgnoreCase("34")
+					&& !ioProperty1.equalsIgnoreCase("0")) {
+				LOGGER.info(">>IF IO EVENT Entered " + ioEvents);
+				iButtonValue = getIButtonHexCode(ioProperty1);
+				ioEve = ioProperty0 + "=" + iButtonValue;
+				LOGGER.info(">>IF IO EVENT Leaved " + ioEvents);
+				fleetTrackingDeviceListenerBO.persistIbutton(iButtonValue, vin,
+						companyId, branchId);
+			} else {
+				LOGGER.info(">>ELSE IO EVENT Entered " + ioEvents);
+				ioEve = ioProperty0 + "=" + ioProperty1;
+				LOGGER.info(">>ELSE IO EVENT Leaved " + ioEvents);
+			}
+		} else {
+			if (ioProperty0.equalsIgnoreCase("34")
+					&& !ioProperty1.equalsIgnoreCase("0")) {
+				LOGGER.info(">>IF IO EVENT Entered Two" + ioEvents);
+				iButtonValue = getIButtonHexCode(ioProperty1);
+				ioEve = ioEvents + "," + ioProperty0 + "=" + iButtonValue;
+				LOGGER.info(">>IF IO EVENT Leaved Two" + ioEvents);
+				fleetTrackingDeviceListenerBO.persistIbutton(iButtonValue, vin,
+						companyId, branchId);
+			} else {
+				LOGGER.info(">>ELSE IO EVENT Entered Two" + ioEvents);
+				ioEve = ioEvents + "," + ioProperty0 + "=" + ioProperty1;
+				LOGGER.info(">>ELSE IO EVENT Leaved Two" + ioEvents);
+			}
+		}
+		return ioEve;
+	}
+
+	private String getIButtonHexCode(String ioId) {
+		LOGGER.info("getIButtonHexCode : " + ioId);
+		String hexaDecimalVal = sDecimalToHexadecimal(ioId);
+		LOGGER.info("hexaDecimalVal : " + hexaDecimalVal);
+
+		String[] sArry = new String[hexaDecimalVal.length()];
+		for (int j = 0; j < hexaDecimalVal.length(); j++) {
+			sArry[j] = String.valueOf(hexaDecimalVal.charAt(j));
+		}
+
+		String pref = "";
+		for (int k = 0; k <= sArry.length - 1; k++) {
+			pref += sArry[14 - k] + sArry[15 - k];
+			k++;
+		}
+		LOGGER.info("PREF : " + pref);
+		return pref;
+	}
+
+	public String sDecimalToHexadecimal(String value) {
+		String output = "";
+		try {
+			BigInteger number = new BigInteger(value);
+			BigInteger hex = new BigInteger("16");
+			BigInteger[] val = {};
+
+			while (number.compareTo(hex) == 1 || number.compareTo(hex) == 0) {
+				val = number.divideAndRemainder(hex);
+				output = arr[val[1].intValue()] + output;
+				number = val[0];
+			}
+			output = arr[number.intValue()] + output;
+
+			if (output.length() == 15) {
+				output = "0" + output;
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return output;
+	}
+
+	private void insertService(VehicleComposite vehicleComposite,
+			FmPro3Data data, long byteTrx,
+			FleetTrackingDeviceListenerBORemote fleetTrackingDeviceListenerBO,
+			String imeiNo) {
+		try {
+			List<Vehicleevent> vehicleEvents = prepareVehicleEvents(
+					vehicleComposite.getVehicle(), data, data.getLenght(),
+					fleetTrackingDeviceListenerBO, imeiNo, vehicleComposite);
+			vehicleComposite.setVehicleData(vdata);
+			if (vehicleEvents == null) {
+				LOGGER.error("Vehicle Events Null ");
+				return;
+			}
+			LOGGER.info("VehicleEvents prepared for vin="
+					+ vehicleEvents.get(0).getId().getVin() + " at "
+					+ new Date());
+			// fleetTrackingDeviceListenerBO.persistDeviceData(vehicleEvents,
+			// vehicleComposite);
+
+			Collections.sort(vehicleEvents, new Comparator<Vehicleevent>() {
+				public int compare(Vehicleevent o1, Vehicleevent o2) {
+					return o1.getId().getEventTimeStamp()
+							.before(o2.getId().getEventTimeStamp()) ? -1 : 1;
+				}
+			});
+			for (Vehicleevent vehicleevent : vehicleEvents) {
+				if (vehicleevent.getEngine() != null) {
+					sktHandlerMethods.persistEventAndGenerateAlert(null,
+							vehicleComposite, imeiNo, "ruptela", vehicleevent);
+
+					LOGGER.info("VehicleEvents persisted");
+				}
+			}
+		} catch (Exception e) {
+			LOGGER.error("Exception while persisting data :: " + e);
+		}
+	}
+
+	public String sendCommand(String password, String command,
+			Socket concoxDeviceSocket) {
+		String result = null;
+		try {
+			VehicleComposite vehicleComposite = fleetTrackingDeviceListenerBO
+					.getVehicle(command.split(",")[1]);
+			DataOutputStream out = new DataOutputStream(
+					concoxDeviceSocket.getOutputStream());
+			String[] immobSuccess = fleetTrackingDeviceListenerBO
+					.getPreferencesData("DeviceSuccessList",
+							vehicleComposite.getVehicle().getCompanyId())
+					.split("#");
+			if (command.split(",")[0].equalsIgnoreCase("cutOffEngine")) {
+				// Old Command(" setio 1,2)
+				String cutOffCommand = FmPro3Data.executeCommand(" setio 0,1");
+				/* Converting response text from String to array of bytes */
+				byte[] responseBytes = FmPro3Data
+						.hexStringToByteArray(cutOffCommand);
+				/* Sending response message to the device */
+				out.write(responseBytes, 0, responseBytes.length);
+				LOGGER.info("Exection in progress...Cut off:" + cutOffCommand);
+				int i = 0;
+				while (i < 30) {
+					if (commandStatus != null) {
+						result = commandStatus;
+						commandStatus = null;
+						String[] str = result.toUpperCase().split(" ");
+						for (int cnt = 0; cnt < immobSuccess.length; cnt++) {
+							for (int j = 0; j < str.length; j++) {
+								immobSuccess[cnt] = immobSuccess[cnt]
+										.toUpperCase();
+								int finalData = immobSuccess[cnt]
+										.indexOf(str[j]);
+								if (finalData != -1) {
+									fleetTrackingDeviceListenerBO
+											.updateLockStatus(vehicleComposite
+													.getVehicle(), 1);
+								}
+							}
+						}
+						break;
+					} else {
+						Thread.sleep(1000);
+					}
+					i++;
+				}
+			} else if (command.split(",")[0].equalsIgnoreCase("restoreEngine")) {
+				// old command(" setio 0,2)
+				String cutOffCommand = FmPro3Data.executeCommand(" setio 1,1");
+				/* Converting response text from String to array of bytes */
+				byte[] responseBytes = FmPro3Data
+						.hexStringToByteArray(cutOffCommand);
+				/* Sending response message to the device */
+				out.write(responseBytes, 0, responseBytes.length);
+				LOGGER.info("Exection in progress...restore:" + cutOffCommand);
+				int i = 0;
+				while (i < 30) {
+					if (commandStatus != null) {
+						result = commandStatus;
+						commandStatus = null;
+						String[] str = result.toUpperCase().split(" ");
+						for (int cnt = 0; cnt < immobSuccess.length; cnt++) {
+							for (int j = 0; j < str.length; j++) {
+								immobSuccess[cnt] = immobSuccess[cnt]
+										.toUpperCase();
+								int finalData = immobSuccess[cnt]
+										.indexOf(str[j]);
+								if (finalData != -1) {
+									fleetTrackingDeviceListenerBO
+											.updateLockStatus(vehicleComposite
+													.getVehicle(), 0);
+								}
+							}
+						}
+						break;
+					} else {
+						Thread.sleep(1000);
+					}
+					i++;
+				}
+			} else {
+				String buzzerCommand = "";
+				if (command.split(",")[0].equalsIgnoreCase("buzzerOn")) {
+					buzzerCommand = " setio 1,0";
+				} else if (command.split(",")[0].equalsIgnoreCase("buzzerOff")) {
+					buzzerCommand = " setio 1,1";
+				} else if (command.split(",")[0]
+						.equalsIgnoreCase("buzzerOffwithLED")) {
+					buzzerCommand = " setio 0,1";
+				}
+				String serverCommand = FmPro3Data.executeCommand(buzzerCommand);
+				/* Converting response text from String to array of bytes */
+				byte[] responseBytes = FmPro3Data
+						.hexStringToByteArray(serverCommand);
+				/* Sending response message to the device */
+				out.write(responseBytes, 0, responseBytes.length);
+				LOGGER.info("Exection in progress...Buzzer:" + serverCommand);
+				int i = 0;
+				while (i < 2) {
+					if (commandStatus != null) {
+						result = commandStatus;
+						commandStatus = null;
+						break;
+					} else {
+						Thread.sleep(1000);
+					}
+					i++;
+				}
+			}
+		} catch (Exception e) {
+			LOGGER.error("SendCommand : " + e);
+			e.printStackTrace();
+		}
+		return result;
+	}
+
+	public String sendNewCommand(String password, String command,
+			Socket concoxDeviceSocket) {
+		commandStatus = null;
+		String result = null;
+		try {
+			DataOutputStream out = new DataOutputStream(
+					concoxDeviceSocket.getOutputStream());
+			String cutOffCommand = FmPro3Data.executeCommand(command);
+			/* Converting response text from String to array of bytes */
+			byte[] responseBytes = FmPro3Data
+					.hexStringToByteArray(cutOffCommand);
+			System.out.println("responseBytes" + new String(responseBytes));
+			/* Sending response message to the device */
+			out.write(responseBytes, 0, responseBytes.length);
+			LOGGER.info("Exection in progress...Cut off:" + cutOffCommand);
+			int i = 0;
+			while (i < 30) {
+				if (commandStatus != null) {
+					result = commandStatus;
+					commandStatus = null;
+					break;
+				} else {
+					Thread.sleep(1000);
+				}
+				i++;
+			}
+		} catch (Exception e) {
+			LOGGER.error("SendCommand : " + e);
+			e.printStackTrace();
+		}
+
+		return result;
+
+	}
+}

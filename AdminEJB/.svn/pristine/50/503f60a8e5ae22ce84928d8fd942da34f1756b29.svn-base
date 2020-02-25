@@ -1,0 +1,973 @@
+package com.eiw.device.handler;
+
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.InputStream;
+import java.math.BigInteger;
+import java.net.Socket;
+import java.net.SocketTimeoutException;
+import java.net.URL;
+import java.net.URLConnection;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+
+import org.apache.commons.io.IOUtils;
+import org.jboss.logging.Logger;
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import com.eiw.cron.AlertConfigEJB;
+import com.eiw.device.concox.ConcoxByteWrapper;
+import com.eiw.device.ejb.FleetTrackingDeviceListenerBORemote;
+import com.eiw.device.ejb.VehicleComposite;
+import com.eiw.device.handler.method.SKTHandlerMethods;
+import com.eiw.device.listener.ListenerStarter;
+import com.eiw.device.meitrack.Position;
+import com.eiw.server.MiscHttpRequest;
+import com.eiw.server.TimeZoneUtil;
+import com.eiw.server.bo.BOFactory;
+import com.eiw.server.fleettrackingpu.Companytrackdevice;
+import com.eiw.server.fleettrackingpu.Heartbeatevent;
+import com.eiw.server.fleettrackingpu.HeartbeateventId;
+import com.eiw.server.fleettrackingpu.Vehicle;
+import com.eiw.server.fleettrackingpu.Vehicleevent;
+import com.eiw.server.fleettrackingpu.VehicleeventId;
+
+public class ConcoxDeviceHandler extends DeviceHandler {
+
+	private static final Logger LOGGER = Logger.getLogger("listener");
+	FleetTrackingDeviceListenerBORemote fleetTrackingDeviceListenerBO = BOFactory
+			.getFleetTrackingDeviceListenerBORemote();
+	AlertConfigEJB cacheForInventory = BOFactory.getAlertsConfigEJB();
+	public static Map<String, Boolean> isInitalTransmision = new HashMap<String, Boolean>();
+	public String commandStatus;
+	private SKTHandlerMethods sktHandlerMethods;
+	private static final String STR_TK200 = "TK200", STR_GT800 = "GT800",
+			STR_GT06F = "GT06F", STR_GT300 = "GT300", STR_AT4 = "AT4";
+
+	@Override
+	public void handleDevice() {
+		LOGGER.info("Entered Concox five mins Handle Device:" + new Date());
+		sktHandlerMethods = new SKTHandlerMethods();
+		DataInputStream clientSocketDis = null;
+		DataOutputStream clientSocketDos = null; // renamed dos to
+													// clientSocketDos
+		try {
+			clientSocket.setSoTimeout(1500000);
+			clientSocketDis = new DataInputStream(clientSocket.getInputStream());
+			clientSocketDos = new DataOutputStream(
+					clientSocket.getOutputStream());
+			dis = clientSocketDis;
+			dos = clientSocketDos;
+			/* Fetching login message from device */
+			ConcoxByteWrapper rawData = new ConcoxByteWrapper();
+			rawData.unwrapDataFromStream(clientSocketDis, clientSocketDos, this);
+			/* Obtaining IMEI NO. from login message */
+			String imeiNo = rawData.getImei();
+			VehicleComposite vehicleComposite = fleetTrackingDeviceListenerBO
+					.getVehicle(imeiNo);
+
+			if (vehicleComposite != null) {
+
+				if (vehicleComposite.getVehicle().getOverAllcmdStatus() == 0) {
+					Vehicle vehicle = vehicleComposite.getVehicle();
+					if (!isInitalTransmision.containsKey(imeiNo)) {
+
+						boolean isStatusChange = false;
+						boolean overallcheck = true;
+						JSONObject commondJson = new JSONObject(
+								vehicleComposite.getVehicle().getCommandsJson());
+						Iterator<String> keys = commondJson.keys();
+						while (keys.hasNext()) {
+							String key = keys.next();
+							JSONArray commandlist = new JSONArray(
+									commondJson.getString(key));
+							for (int i = 0; i < commandlist.length(); i++) {
+								JSONObject commands = new JSONObject(
+										commandlist.get(i).toString());
+								if (commands.getString("status")
+										.equalsIgnoreCase("No")) {
+									try {
+										isInitalTransmision.put(imeiNo, true);
+										String Status = sendNewCommand(
+												"isAutoMate",
+												commands.getString("cmd"),
+												clientSocket);
+										rawData.unwrapDataFromStream(
+												clientSocketDis,
+												clientSocketDos, this);
+										int k = 0;
+										while (k < 30) {
+											if (rawData.getCommand() != rawData.MSG_STRING) {
+												rawData.unwrapDataFromStream(
+														clientSocketDis,
+														clientSocketDos, this);
+												Thread.sleep(1000);
+											} else {
+												break;
+											}
+											k++;
+										}
+
+										if (rawData.getResponseForCoommandStr() != null) {
+											isStatusChange = true;
+											LOGGER.error("Device Status:---->"
+													+ rawData
+															.getResponseForCoommandStr());
+											commands.put("status", "Yes");
+											commandlist.put(i, commands);
+
+										} else {
+
+											overallcheck = false;
+										}
+									} catch (Exception e) {
+										LOGGER.error("Inside Initial Transmission state: "
+												+ imeiNo);
+										e.printStackTrace();
+									}
+								}
+							}
+							commondJson.put(key, commandlist);
+
+						}
+						if (isStatusChange) {
+
+							vehicle.setCommandsJson(commondJson.toString());
+							vehicle.setOverAllcmdStatus(overallcheck ? 1 : 0);
+							// em.merge(vehicle);
+							fleetTrackingDeviceListenerBO
+									.updatevehicle(vehicle);
+
+							vehicleComposite.setVehicle(vehicle);
+						}
+						isInitalTransmision.remove(imeiNo);
+
+					} else {
+						LOGGER.error("ConcoxDeviceHandler: handleDevice: Configuring the Device .... "
+								+ imeiNo);
+					}
+				}
+
+			} else {
+				if (cacheForInventory.isImeiAvailable.isEmpty()) {
+					if (MiscHttpRequest.invokeInventoryApi(imeiNo)) {
+						cacheForInventory.isImeiAvailable.put(imeiNo, "2");
+						LOGGER.info("ConcoxDeviceHandler: handleDevice recieved IMEI is recognized  "
+								+ imeiNo);
+					} else {
+						cacheForInventory.isImeiAvailable.put(imeiNo, "null");
+					}
+				} else if (cacheForInventory.isImeiAvailable
+						.containsKey(imeiNo)) {
+					if (cacheForInventory.isImeiAvailable.get(imeiNo)
+							.equalsIgnoreCase("0")
+							|| cacheForInventory.isImeiAvailable.get(imeiNo)
+									.equalsIgnoreCase("1")) {
+						if (MiscHttpRequest.invokeInventoryApi(imeiNo)) {
+							cacheForInventory.isImeiAvailable.put(imeiNo, "2");
+							LOGGER.info("ConcoxDeviceHandler: handleDevice recieved IMEI is recognized  "
+									+ imeiNo);
+						} else {
+							cacheForInventory.isImeiAvailable.put(imeiNo,
+									"null");
+						}
+
+					} else if (cacheForInventory.isImeiAvailable.get(imeiNo)
+							.equalsIgnoreCase("null")) {
+						LOGGER.error("ConcoxDeviceHandler: handleDevice: After Checking ArmoronDB Received IMEI No is invalid... returning... "
+								+ imeiNo);
+					}
+				} else {
+					LOGGER.error("ConcoxDeviceHandler: handleDevice: Received IMEI No is invalid... returning... "
+							+ imeiNo);
+				}
+				return;
+			}
+
+			super.deviceImei = imeiNo;
+			if (ListenerStarter.concoxDeviceHandlerMap.get(deviceImei) == null) {
+				ListenerStarter.concoxDeviceHandlerMap.put(deviceImei, this);
+			} else {
+				LOGGER.info("Before cleanUpSockets Inside else loop :"
+						+ deviceImei);
+				cleanUpSockets(
+						ListenerStarter.concoxDeviceHandlerMap.get(deviceImei)
+								.getClientSocket(),
+						ListenerStarter.concoxDeviceHandlerMap.get(deviceImei)
+								.getDis(),
+						ListenerStarter.concoxDeviceHandlerMap.get(deviceImei)
+								.getDos());
+				LOGGER.info("After cleanUpSockets Inside else loop :"
+						+ deviceImei);
+				ListenerStarter.concoxDeviceHandlerMap.put(deviceImei, this);
+			}
+
+			while (true) {
+				// ConcoxByteWrapper rawData = new ConcoxByteWrapper(
+				// clientSocketDis, clientSocketDos);
+				rawData.unwrapDataFromStream(clientSocketDis, clientSocketDos,
+						this);
+				if (ListenerStarter.concoxDeviceHandlerMap.get(deviceImei) == null) {
+					ListenerStarter.concoxDeviceHandlerMap
+							.put(deviceImei, this);
+				}
+				if (rawData.getCommand() == ConcoxByteWrapper.MSG_GPS_LBS_1
+						|| rawData.getCommand() == ConcoxByteWrapper.MSG_GPS_LBS_2
+						|| rawData.getCommand() == ConcoxByteWrapper.MSG_GPS_LBS_STATUS_1
+						|| rawData.getCommand() == ConcoxByteWrapper.MSG_GPS_LBS_STATUS_2
+						|| rawData.getCommand() == ConcoxByteWrapper.MSG_GPS_LBS_STATUS_3) {
+					insertService(rawData, vehicleComposite,
+							fleetTrackingDeviceListenerBO);
+				} else if (rawData.getCommand() == ConcoxByteWrapper.MSG_STATUS
+						|| rawData.getCommand() == ConcoxByteWrapper.MSG_HEARTBEAT) {
+					updateHeartBeatInfo(rawData, vehicleComposite,
+							fleetTrackingDeviceListenerBO);
+				}
+			}
+		} catch (SocketTimeoutException e) {
+			LOGGER.error("SocketTimeoutExceptiontion while receiving the Message "
+					+ e);
+		} catch (Exception e) {
+			LOGGER.error("Exception while receiving the Message Concox " + e);
+		} finally {
+			if (deviceImei != null) {
+				ListenerStarter.concoxDeviceHandlerMap.remove(this.deviceImei);
+			}
+			cleanUpSockets(clientSocket, clientSocketDis, clientSocketDos);
+			LOGGER.info("DeviceCommunicatorThread:DeviceCommunicator Completed");
+		}
+	}
+
+	private void updateHeartBeatInfo(ConcoxByteWrapper rawData,
+			VehicleComposite vehicleComposite,
+			FleetTrackingDeviceListenerBORemote entityManagerService) {
+		// TODO Auto-generated method stub
+		Vehicle vehicle = vehicleComposite.getVehicle();
+		VehicleeventId vehicleeventId = new VehicleeventId();
+		String region = vehicleComposite.getTimeZoneRegion();
+		vehicleeventId.setEventTimeStamp(TimeZoneUtil.getDateTimeZone(
+				new Date(), region));
+		Vehicleevent ve = entityManagerService.getPrevVeConcox(
+				vehicle.getVin(), vehicleeventId.getEventTimeStamp());
+		if (ve != null) {
+			String hbd = "hbd="
+					+ rawData.getConcoxGpsData().getAlarm()
+					+ ";"
+					+ rawData.getConcoxGpsData().getGpsTracking()
+					+ ";"
+					+ TimeZoneUtil.getTimeINYYYYMMddss(
+							TimeZoneUtil.getDateTimeZone(new Date(), region))
+							.toString() + ";"
+					+ rawData.getConcoxGpsData().getGsmSignal() + ";"
+					+ rawData.getConcoxGpsData().getHbdacc() + ";"
+					+ rawData.getConcoxGpsData().getVoltageLevel() + ";"
+					+ rawData.getConcoxGpsData().getCharge();
+
+			String ioevent = "";
+			for (String ioe : ve.getIoevent().split(",")) {
+				if (ioe.startsWith("hbd")) {
+					break;
+				}
+				if (ioevent.equalsIgnoreCase(""))
+					ioevent += ioe;
+				else
+					ioevent += "," + ioe;
+			}
+			String io = "";
+			if (ioevent.equalsIgnoreCase(""))
+				io += hbd;
+			else
+				io += ioevent + "," + hbd;
+			ve.setIoevent(io);
+
+			List<Vehicleevent> vehicleEvents = new ArrayList<Vehicleevent>();
+			vehicleEvents.add(ve);
+			fleetTrackingDeviceListenerBO.updateVehicleevent(vehicleEvents,
+					"hbd", vehicleComposite);
+			try {
+				String hbdChecking;
+				if (!SKTHandlerMethods.hbdCheck.isEmpty()
+						&& SKTHandlerMethods.hbdCheck.get(vehicle
+								.getCompanyId()) != null) {
+					hbdChecking = SKTHandlerMethods.hbdCheck.get(vehicle
+							.getCompanyId());
+				} else {
+					hbdChecking = entityManagerService.getCompanySettings(
+							"heartbeatCheck", vehicle.getCompanyId());
+					SKTHandlerMethods.hbdCheck.put(vehicle.getCompanyId(),
+							hbdChecking);
+				}
+				if (hbdChecking.equalsIgnoreCase("1")) {
+					if (!rawData.getConcoxGpsData().getHbdacc()
+							&& ve.getEngine()) {
+						Vehicleevent vehicleEvent = new Vehicleevent();
+						vehicleeventId.setVin(vehicle.getVin());
+						vehicleEvent.setServerTimeStamp(vehicleeventId
+								.getEventTimeStamp());
+						vehicleEvent.setEngine(rawData.getConcoxGpsData()
+								.getHbdacc());
+						vehicleEvent.setSpeed(0);
+						vehicleEvent.setIoevent(io);
+						vehicleEvent.setLatitude(ve.getLatitude());
+						vehicleEvent.setLongitude(ve.getLongitude());
+						vehicleEvent.setDirection(ve.getDirection());
+						vehicleEvent.setDi1(rawData.getConcoxGpsData()
+								.getHbdacc() ? 1 : 0);
+						vehicleEvent.setTags("hbd");
+						long differenceInSec = (vehicleeventId
+								.getEventTimeStamp().getTime() - ve.getId()
+								.getEventTimeStamp().getTime()) / 1000;
+						if (differenceInSec > 1200) {
+							vehicleeventId.setEventTimeStamp(ve
+									.getServerTimeStamp());
+							vehicleEvent.setTags("NT");
+						}
+						vehicleEvent.setId(vehicleeventId);
+						Position position = getPositionObject(vehicleEvent);
+						String imeiNo = String.valueOf(position.getDeviceId());
+						sktHandlerMethods.persistEventAndGenerateAlert(
+								position, vehicleComposite, imeiNo, "concox",
+								vehicleEvent);
+					}
+				}
+			} catch (Exception e) {
+				LOGGER.error("ConcoxDeviceProtocolHandler:updateHeartBeatInfo:heartbeatCheck :: "
+						+ e);
+				e.printStackTrace();
+			}
+
+		}
+		prepareAndPersistHeartBeatEvents(vehicle, rawData, region,
+				vehicleComposite);
+	}
+
+	private void insertService(ConcoxByteWrapper rawData,
+			VehicleComposite vehicleComposite,
+			FleetTrackingDeviceListenerBORemote fleetTrackingDeviceListenerBO) {
+		try {
+			Vehicle vehicle = vehicleComposite.getVehicle();
+			Companytrackdevice companytrackDevice = vehicleComposite
+					.getCompanytrackDevice();
+			Vehicleevent vehicleEvent = prepareVehicleEvents(vehicle,
+					companytrackDevice, rawData, fleetTrackingDeviceListenerBO,
+					vehicleComposite);
+			if (vehicleEvent != null) {
+				LOGGER.info("ConcoxDeviceProtocolHandler: handleDevice: VehicleEvents prepared for vin="
+						+ vehicleEvent.getId().getVin() + " at " + new Date());
+
+				/**
+				 * For SKT
+				 */
+				Position position = getPositionObject(vehicleEvent);
+				String imeiNo = String.valueOf(position.getDeviceId());
+
+				LOGGER.info("ConcoxDeviceHandler : Time:: "
+						+ position.getTime() + " and Concoximei = "
+						+ position.getDeviceId() + " and RFID = "
+						+ position.getRfid() + " and Company = "
+						+ vehicleComposite.getVehicle().getCompanyId()
+						+ " and Branch = "
+						+ vehicleComposite.getVehicle().getBranchId());
+				sktHandlerMethods.persistEventAndGenerateAlert(position,
+						vehicleComposite, imeiNo, "concox", vehicleEvent);
+			}
+
+		} catch (Exception e) {
+			LOGGER.error("Exception while persisting data :: " + e);
+		}
+	}
+
+	/**
+	 * This method for set data in Position Object from VehicleEvents object for
+	 * SKT
+	 * 
+	 * @param vehicleEvent
+	 * @return position
+	 */
+	private Position getPositionObject(Vehicleevent vehicleEvent) {
+		Position position = new Position();
+		position.setDeviceId(Long.valueOf(deviceImei));
+		position.setRfid("1");
+		position.setTime(vehicleEvent.getId().getEventTimeStamp());
+		position.setLatitude(Double.valueOf(vehicleEvent.getLatitude()));
+		position.setLongitude(Double.valueOf(vehicleEvent.getLongitude()));
+		position.setSpeed(Double.valueOf(vehicleEvent.getSpeed()));
+		return position;
+	}
+
+	private Vehicleevent prepareVehicleEvents(Vehicle vehicle,
+			Companytrackdevice companytrackDevice, ConcoxByteWrapper avlData,
+			FleetTrackingDeviceListenerBORemote entityManagerService,
+			VehicleComposite vehicleComposite) {
+		Vehicleevent vehicleEvent = new Vehicleevent();
+		try {
+			// String region = entityManagerService.getTimeZoneRegion(vehicle
+			// .getVin());
+			String region = vehicleComposite.getTimeZoneRegion();
+
+			// Vehicleevent ve =
+			// entityManagerService.getPrevVe(vehicle.getVin());
+
+			VehicleeventId vehicleeventId = new VehicleeventId();
+			if ((companytrackDevice.getCompanytrackdevicemodels().getId()
+					.getModelName().equalsIgnoreCase("JV200"))
+					|| (companytrackDevice.getCompanytrackdevicemodels()
+							.getId().getModelName().equalsIgnoreCase("KT-Mini"))
+					|| (companytrackDevice.getCompanytrackdevicemodels()
+							.getId().getModelName().equalsIgnoreCase("GT300"))
+					|| (companytrackDevice.getCompanytrackdevicemodels()
+							.getId().getModelName().equalsIgnoreCase("TK200"))
+					|| (companytrackDevice.getCompanytrackdevicemodels()
+							.getId().getModelName().equalsIgnoreCase("GT800"))
+					|| (companytrackDevice.getCompanytrackdevicemodels()
+							.getId().getModelName().equalsIgnoreCase("AT4"))) {
+				vehicleeventId.setEventTimeStamp(TimeZoneUtil.getDateTimeZone(
+						avlData.getConcoxGpsData().getDateTime(), region));
+			} else {
+				vehicleeventId.setEventTimeStamp(avlData.getConcoxGpsData()
+						.getDateTime());
+			}
+			// vehicleEvent.setServerTimeStamp(TimeZoneUtil.getDateInTimeZone());
+			vehicleEvent.setServerTimeStamp(TimeZoneUtil.getDateTimeZone(
+					new Date(), region));
+			//
+			Vehicleevent ve = entityManagerService.getPrevVeConcox(
+					vehicle.getVin(), vehicleeventId.getEventTimeStamp());
+			Calendar cal1 = Calendar.getInstance();
+			cal1.setTime(vehicleEvent.getServerTimeStamp());
+			Calendar cal2 = Calendar.getInstance();
+			cal2.setTime(vehicleeventId.getEventTimeStamp());
+			if (!(cal1.get(Calendar.YEAR) == cal2.get(Calendar.YEAR))) {
+				return null;
+			}
+
+			double latitude = (double) avlData.getConcoxGpsData().getLatitude();
+			latitude = (double) Math.round(latitude * 10000) / 10000;
+			double longitude = (double) avlData.getConcoxGpsData().getLongitude();
+			longitude = (double) Math.round(longitude * 10000) / 10000;
+
+			vehicleEvent.setLongitude(longitude);
+			vehicleEvent.setLatitude(latitude);
+			if (latitude == 0.0 || longitude == 0.0
+					|| (latitude < 0 && longitude < 0)) {
+				return null;
+			}
+
+			// This if loop is for Speed Minus to Positive value
+			// If you need uncomment it and use
+			// if (avlData.getConcoxGpsData().getSpeed() < 0) {
+			// avlData.getConcoxGpsData().setSpeed(
+			// avlData.getConcoxGpsData().getSpeed() * (-1));
+			// }
+			vehicleEvent.setSpeed(avlData.getConcoxGpsData().getSpeed());
+			vehicleeventId.setVin(vehicle.getVin());
+			vehicleEvent.setId(vehicleeventId);
+			if (companytrackDevice.getCompanytrackdevicemodels().getId()
+					.getModelName().equalsIgnoreCase("GT300")) {
+				if (avlData.getConcoxGpsData().getAlarm() != null) {
+					if (avlData.getConcoxGpsData().getAlarm()
+							.equalsIgnoreCase("Shock")) {
+						vehicleEvent.setEngine(true);
+					} else {
+						if (ve != null) {
+							if (ve.getTags().equalsIgnoreCase("Alarm=Shock")) {
+								vehicleEvent.setEngine(true);
+							} else {
+								vehicleEvent.setEngine(false);
+							}
+						} else {
+							vehicleEvent.setEngine(false);
+						}
+					}
+				} else {
+					vehicleEvent.setEngine(false);
+				}
+			} else {
+				vehicleEvent.setEngine(avlData.getConcoxGpsData().getAcc());
+			}
+			if ((companytrackDevice.getCompanytrackdevicemodels().getId()
+					.getModelName().equalsIgnoreCase(STR_GT800))
+					|| (companytrackDevice.getCompanytrackdevicemodels()
+							.getId().getModelName().equalsIgnoreCase(STR_GT06F))) {
+				if (avlData.getConcoxGpsData().getDoorStatus() != null) {
+					vehicleEvent.setDi2(Integer.parseInt(avlData
+							.getConcoxGpsData().getDoorStatus()));
+				} else {
+					if (ve.getDi2() != null) {
+						if (ve.getDi2() == 1) {
+							vehicleEvent.setDi2(1);
+						} else {
+							vehicleEvent.setDi2(0);
+						}
+					} else {
+						vehicleEvent.setDi2(0);
+					}
+				}
+				int ai1 = avlData.getConcoxGpsData().getAdtValue() * 10;
+				if (ai1 < 1) {
+					vehicleEvent.setAi1(ve.getAi1());
+				} else {
+					vehicleEvent.setAi1(ai1);
+				}
+
+			}
+			String ioEvent = "21=" + avlData.getConcoxGpsData().getGsmSignal()
+					+ ",69=" + avlData.getConcoxGpsData().getSatellites()
+					+ ",600=" + avlData.getConcoxGpsData().getAlarm();
+			if (ve != null && ve.getIoevent() != null) {
+				for (String ioe : ve.getIoevent().split(",")) {
+					if (ioe.startsWith("hbd")) {
+						ioEvent += "," + ioe;
+					}
+				}
+			}
+			vehicleEvent.setIoevent(ioEvent);
+			vehicleEvent.setTags("Alarm="
+					+ avlData.getConcoxGpsData().getAlarm());
+			// vehicleEvent.setBattery(Long.valueOf(avlData.getConcoxGpsData()
+			// .getVoltageLevel()));
+			if (avlData.getConcoxGpsData().getAlarm() == null
+					&& !companytrackDevice.getCompanytrackdevicemodels()
+							.getId().getModelName().equalsIgnoreCase(STR_TK200)
+					&& !companytrackDevice.getCompanytrackdevicemodels()
+							.getId().getModelName().equalsIgnoreCase(STR_GT300)
+					&& !companytrackDevice.getCompanytrackdevicemodels()
+							.getId().getModelName().equalsIgnoreCase(STR_AT4)) {
+				Heartbeatevent prevHb = entityManagerService
+						.getPrevHeartbeatEvent(vehicle.getVin(),
+								vehicleeventId.getEventTimeStamp());
+				if (prevHb != null) {
+					vehicleEvent.setEngine(prevHb.getEngine());
+				}
+			}
+			String accCheck;
+			if (!SKTHandlerMethods.accForSpeed.isEmpty()
+					&& SKTHandlerMethods.accForSpeed
+							.get(vehicle.getCompanyId()) != null) {
+				accCheck = SKTHandlerMethods.accForSpeed.get(vehicle
+						.getCompanyId());
+			} else {
+				accCheck = entityManagerService.getCompanySettings(
+						"accSetting", vehicle.getCompanyId());
+				SKTHandlerMethods.accForSpeed.put(vehicle.getCompanyId(),
+						accCheck);
+			}
+			if (vehicleEvent.getSpeed() > 0 && accCheck.equalsIgnoreCase("1")) {
+				vehicleEvent.setEngine(true);
+			}
+			vehicleEvent.setDi1(avlData.getConcoxGpsData().getAcc() ? 1 : 0);
+			if (companytrackDevice.getCompanytrackdevicemodels().getId()
+					.getModelName().equalsIgnoreCase(STR_TK200)
+					|| (companytrackDevice.getCompanytrackdevicemodels()
+							.getId().getModelName().equalsIgnoreCase(STR_AT4))) {
+				vehicleEvent
+						.setEngine(avlData.getConcoxGpsData().getSpeed() > 0 ? true
+								: false);
+			}
+			String towedOdometer;
+			if (!SKTHandlerMethods.odometerForTowed.isEmpty()
+					&& SKTHandlerMethods.odometerForTowed.get(vehicle
+							.getCompanyId()) != null) {
+				towedOdometer = SKTHandlerMethods.odometerForTowed.get(vehicle
+						.getCompanyId());
+			} else {
+				towedOdometer = entityManagerService.getCompanySettings(
+						"towedCalc", vehicle.getCompanyId());
+				SKTHandlerMethods.odometerForTowed.put(vehicle.getCompanyId(),
+						towedOdometer);
+			}
+			if (towedOdometer.equalsIgnoreCase("1")) {
+				if (vehicleEvent.getSpeed() != 0) {
+					double odometer = distanceMatrix(ve.getLatitude(),
+							ve.getLongitude(), vehicleEvent.getLatitude(),
+							vehicleEvent.getLongitude());
+					if (odometer >= 20000) {
+						return null;
+					}
+					vehicleEvent.setOdometer((long) odometer);
+				}
+			} else {
+				if (ve != null && vehicleEvent.getEngine()
+						&& vehicleEvent.getSpeed() != 0) {
+					double odometer = distanceMatrix(ve.getLatitude(),
+							ve.getLongitude(), vehicleEvent.getLatitude(),
+							vehicleEvent.getLongitude());
+					if (odometer >= 20000) {
+						return null;
+					}
+					vehicleEvent.setOdometer((long) odometer);
+				}
+			}
+
+			if (ve != null
+					&& (!ve.getEngine() || ve.getSpeed() == 0)
+					&& (!vehicleEvent.getEngine() || vehicleEvent.getSpeed() == 0)) {
+				vehicleEvent.setDirection(ve.getDirection());
+			} else {
+				vehicleEvent.setDirection(avlData.getConcoxGpsData()
+						.getCourse());
+			}
+
+			String prevVeCheck;
+			if (!SKTHandlerMethods.hbdCheck.isEmpty()
+					&& SKTHandlerMethods.hbdCheck.get(vehicle.getCompanyId()) != null) {
+				prevVeCheck = SKTHandlerMethods.hbdCheck.get(vehicle
+						.getCompanyId());
+			} else {
+				prevVeCheck = entityManagerService.getCompanySettings(
+						"heartbeatCheck", vehicle.getCompanyId());
+				SKTHandlerMethods.hbdCheck.put(vehicle.getCompanyId(),
+						prevVeCheck);
+			}
+			if (prevVeCheck.equalsIgnoreCase("1")) {
+				if (ve != null && ve.getSpeed() != 0) {
+					long timeDiffInsec = (vehicleeventId.getEventTimeStamp()
+							.getTime() - ve.getId().getEventTimeStamp()
+							.getTime()) / 1000;
+					if (timeDiffInsec > 1200) {
+						vehicleEvent.setEngine(false);
+						vehicleEvent.setSpeed(0);
+						vehicleEvent.setIoevent(ve.getIoevent());
+						vehicleEvent.setLatitude(ve.getLatitude());
+						vehicleEvent.setLongitude(ve.getLongitude());
+						vehicleEvent.setDirection(ve.getDirection());
+						vehicleEvent.setOdometer(0L);
+						vehicleEvent.setDi1(0);
+						vehicleEvent.setTags("NTVE");
+						Calendar cal = Calendar.getInstance();
+						cal.setTime(ve.getId().getEventTimeStamp());
+						cal.add(Calendar.SECOND, 5);
+						vehicleEvent.getId().setEventTimeStamp(cal.getTime());
+					}
+				}
+
+			}
+
+			// SBT Handler
+			// Map<String, StudentData> studentDetailsNStatusMap =
+			// entityManagerService
+			// .getStudentDetailsNstatusAsMap(vehicle);
+			// entityManagerService.busAlertsForParents(vehicleEvent,
+			// studentDetailsNStatusMap, vehicle);
+
+			// SKTAlertsManager sktAlertsManager = new SKTAlertsManager();
+			// sktAlertsManager.manageAlerts(vehicleEvent, vehicle);
+		} catch (Exception e) {
+			LOGGER.error("ConcoxDeviceProtocolHandler: PreparevehicleEvents:"
+					+ e);
+			e.printStackTrace();
+		}
+		return vehicleEvent;
+	}
+
+	public double distance(double lat1, double lng1, double lat2, double lng2) {
+		double earthRadius = 6371000; // meters
+		double dLat = Math.toRadians(lat2 - lat1);
+		double dLng = Math.toRadians(lng2 - lng1);
+		double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+				+ Math.cos(Math.toRadians(lat1))
+				* Math.cos(Math.toRadians(lat2)) * Math.sin(dLng / 2)
+				* Math.sin(dLng / 2);
+		double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+		float dist = (float) (earthRadius * c);
+
+		return dist;
+	}
+
+	public double distanceMatrix(double lat1, double lng1, double lat2, double lng2) {
+		try {
+			URL url1 = new URL(
+					"https://maps.googleapis.com/maps/api/distancematrix/json?origins="
+							+ lat1
+							+ ","
+							+ lng1
+							+ "&destinations="
+							+ lat2
+							+ ","
+							+ lng2
+							+ "&mode=driving&language=en-EN&sensor=false&key=AIzaSyAb94T4OXJmVss7ArXmkKHb11PQ0fw6lyA");
+			URLConnection con = url1.openConnection();
+			InputStream in = con.getInputStream();
+			String encoding = "UTF-8";
+			String statusText = IOUtils.toString(in, encoding);
+			if (statusText == null || !statusText.contains("distance")) {
+				return distance(lat1, lng1, lat2, lng2);
+			}
+			JSONObject json = new JSONObject(statusText);
+			String rows = json.getString("rows");
+			JSONObject rowObject = new JSONObject(rows.substring(1,
+					rows.length() - 1));
+			String elements = rowObject.getString("elements");
+			JSONObject elementsObject = new JSONObject(elements.substring(1,
+					elements.length() - 1));
+			String distance = elementsObject.getString("distance");
+			JSONObject distanceObject = new JSONObject(distance);
+			// return Float.valueOf(distanceObject.getString("value"));
+			float finalValue = Float.valueOf(distanceObject.getString("value"));
+			if (finalValue >= 3000) {
+				return distance(lat1, lng1, lat2, lng2);
+			} else {
+				return finalValue;
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return distance(lat1, lng1, lat2, lng2);
+	}
+
+	public String sendCommand(String command, Socket concoxDeviceSocket) {
+		String result = null;
+		LOGGER.info("Entered send command:" + command);
+		try {
+			DataOutputStream out = new DataOutputStream(
+					concoxDeviceSocket.getOutputStream());
+			VehicleComposite vehicleComposite = fleetTrackingDeviceListenerBO
+					.getVehicle(command.split(",")[1]);
+			String modelName = vehicleComposite.getCompanytrackDevice()
+					.getCompanytrackdevicemodels().getId().getModelName();
+			String type = command.split(",")[0];
+			String[] immobSuccess = fleetTrackingDeviceListenerBO
+					.getPreferencesData("DeviceSuccessList",
+							vehicleComposite.getVehicle().getCompanyId())
+					.split("#");
+			LOGGER.info("type:" + type);
+			if (type.split("_")[0].equalsIgnoreCase("cutOffEngine")) {
+				String cutOffCommand = "";
+				if ((modelName.equalsIgnoreCase("KT-Mini"))
+						|| (modelName.equalsIgnoreCase("TK200")))
+					cutOffCommand = ConcoxByteWrapper.getCutOffCommandKT_Mini();
+				else
+					cutOffCommand = ConcoxByteWrapper.getCutOffCommand();
+				/* Converting response text from String to array of bytes */
+				byte[] responseBytes = ConcoxByteWrapper
+						.hexStringToByteArray(cutOffCommand);
+				/* Sending response message to the device */
+				out.write(responseBytes, 0, responseBytes.length);
+				int i = 0;
+				while (i < 120) {
+					if (this.commandStatus != null) {
+						if (this.commandStatus.equalsIgnoreCase("DYD=Success!"))
+							result = "cutOffEngine OK";
+						else
+							result = this.commandStatus;
+						String[] str = result.toUpperCase().split(" ");
+						for (int cnt = 0; cnt < immobSuccess.length; cnt++) {
+							for (int j = 0; j < str.length; j++) {
+								immobSuccess[cnt] = immobSuccess[cnt]
+										.toUpperCase();
+								int finalData = immobSuccess[cnt]
+										.indexOf(str[j]);
+								if (finalData != -1) {
+									fleetTrackingDeviceListenerBO
+											.updateLockStatus(vehicleComposite
+													.getVehicle(), 1);
+								}
+							}
+						}
+						this.commandStatus = null;
+						break;
+					} else {
+						Thread.sleep(1000);
+					}
+					i++;
+				}
+			} else if (type.split("_")[0].equalsIgnoreCase("restoreEngine")) {
+				String cutOffCommand = "";
+				if ((modelName.equalsIgnoreCase("KT-Mini"))
+						|| (modelName.equalsIgnoreCase("TK200")))
+					cutOffCommand = ConcoxByteWrapper
+							.getRestoreCommandKT_Mini();
+				else
+					cutOffCommand = ConcoxByteWrapper.getRestoreCommand();
+				/* Converting response text from String to array of bytes */
+				byte[] responseBytes = ConcoxByteWrapper
+						.hexStringToByteArray(cutOffCommand);
+				/* Sending response message to the device */
+				out.write(responseBytes, 0, responseBytes.length);
+				int i = 0;
+				while (i < 120) {
+					if (this.commandStatus != null) {
+						if (this.commandStatus
+								.equalsIgnoreCase("HFYD=Success!"))
+							result = "restoreEngine OK";
+						else
+							result = this.commandStatus;
+						this.commandStatus = null;
+						String[] str = result.toUpperCase().split(" ");
+						for (int cnt = 0; cnt < immobSuccess.length; cnt++) {
+							for (int j = 0; j < str.length; j++) {
+								immobSuccess[cnt] = immobSuccess[cnt]
+										.toUpperCase();
+								int finalData = immobSuccess[cnt]
+										.indexOf(str[j]);
+								if (finalData != -1) {
+									fleetTrackingDeviceListenerBO
+											.updateLockStatus(vehicleComposite
+													.getVehicle(), 0);
+								}
+							}
+						}
+						break;
+					} else {
+						Thread.sleep(1000);
+					}
+					i++;
+				}
+			} else if (type.split("_")[0].equalsIgnoreCase("Angle")
+					|| type.split("_")[0].contains("TimeDelay")
+					|| type.split("_")[0].equalsIgnoreCase("Language")
+					|| type.split("_")[0].equalsIgnoreCase("Admin")
+					|| type.split("_")[0].equalsIgnoreCase("Sleep")
+					|| type.split("_")[0].equalsIgnoreCase("Reset")) {
+				LOGGER.info("Entered: " + type.split("_")[0]);
+				String contactNo = command.split(",")[0].split("_")[1];
+				String vehicleTransmissionCommands = "";
+				String sec = "";
+				if (type.split("_")[0].equalsIgnoreCase("Angle")) {
+					vehicleTransmissionCommands = ConcoxByteWrapper
+							.getAngleCommand();
+				} else if (type.split("_")[0].contains("TimeDelay")) {
+					String timeDelay = type.split("_")[0];
+					sec = timeDelay.split("=")[1];
+					vehicleTransmissionCommands = ConcoxByteWrapper
+							.getTimeDelayCommand(sec);
+				} else if (type.split("_")[0].equalsIgnoreCase("Language")) {
+					vehicleTransmissionCommands = ConcoxByteWrapper
+							.getLanguageCommand();
+				} else if (type.split("_")[0].equalsIgnoreCase("Admin")) {
+					vehicleTransmissionCommands = ConcoxByteWrapper
+							.getAdminCommand(contactNo);
+				} else if (type.split("_")[0].equalsIgnoreCase("Sleep")) {
+					vehicleTransmissionCommands = ConcoxByteWrapper
+							.getSleepCommand();
+				} else {
+					vehicleTransmissionCommands = ConcoxByteWrapper
+							.getResetCommand();
+				}
+				byte[] responseBytes = ConcoxByteWrapper
+						.hexStringToByteArray(vehicleTransmissionCommands);
+				out.write(responseBytes, 0, responseBytes.length);
+				if (type.split("_")[0].equalsIgnoreCase("Reset"))
+					return "success";
+				int i = 0;
+				while (i < 60) {
+					if (this.commandStatus != null) {
+						if (this.commandStatus
+								.equalsIgnoreCase("#6666#angle#0#-OK")) {
+							result = "success";
+						} else if (this.commandStatus
+								.equalsIgnoreCase("#6666#sleep#1440#-OK")) {
+							result = "success";
+						} else if (this.commandStatus
+								.equalsIgnoreCase("#6666#SMT#" + sec + "#-OK")) {
+							result = "success";
+						} else if (this.commandStatus
+								.equalsIgnoreCase("#6666#Language#2#-OK")) {
+							result = "success";
+						} else if (this.commandStatus
+								.equalsIgnoreCase("#6666#AAD#1#" + contactNo
+										+ "#-OK")) {
+							result = "success";
+						} else if (this.commandStatus
+								.equalsIgnoreCase("#6666#SST#60#-OK")) {
+							result = "success";
+						} else
+							result = this.commandStatus;
+						this.commandStatus = null;
+						break;
+					} else {
+						Thread.sleep(1000);
+					}
+					i++;
+				}
+			}
+		} catch (Exception e) {
+			LOGGER.error("SendCommand : " + e);
+			e.printStackTrace();
+		}
+		return result;
+	}
+
+	public String sendNewCommand(String password, String command,
+			Socket concoxDeviceSocket) {
+		this.commandStatus = null;
+		String result = null;
+		int j = 45;
+		if (password.equalsIgnoreCase("isAutoMate"))
+			j = 2;
+
+		LOGGER.error("Entered send new concox command:" + command);
+		try {
+			DataOutputStream out = new DataOutputStream(
+					concoxDeviceSocket.getOutputStream());
+			String commandRequired = String.format("%02x", new BigInteger(1,
+					(command).getBytes()));
+			int commandLength = commandRequired.length() / 2;
+
+			String pData = (String.format("%02x", (10 + commandLength)) + "80" + String
+					.format("%02x", (4 + commandLength))).toString()
+					+ "0001A958" + commandRequired + "00A0";
+			String dataForCrc = ConcoxByteWrapper.crcCalculation(
+					ConcoxByteWrapper.hexStringToByteArray(pData),
+					(pData.length() / 2));
+			String checkDigits = Integer.toString(String.valueOf(dataForCrc)
+					.length());
+			if (checkDigits.equals("3")) {
+				dataForCrc = "0" + dataForCrc;
+				System.out.println(dataForCrc);
+			}
+			String requiredCommand = "7878" + pData + dataForCrc + "0D0A";
+			byte[] responseBytes = ConcoxByteWrapper
+					.hexStringToByteArray(requiredCommand);
+			out.write(responseBytes, 0, responseBytes.length);
+			int i = 0;
+			while (i < j) {
+				if (this.commandStatus != null) {
+					result = this.commandStatus;
+					this.commandStatus = null;
+					break;
+				} else {
+					Thread.sleep(1000);
+				}
+				i++;
+			}
+		} catch (Exception e) {
+			LOGGER.error("Send New Concox Command:" + e);
+			e.printStackTrace();
+		}
+
+		return result;
+
+	}
+
+	private void prepareAndPersistHeartBeatEvents(Vehicle vehicle,
+			ConcoxByteWrapper rawData, String region,
+			VehicleComposite vehicleComposite) {
+		Heartbeatevent heartBeatEvent = new Heartbeatevent();
+		try {
+			HeartbeateventId heartbeateventId = new HeartbeateventId();
+			heartbeateventId.setTimeStamp(TimeZoneUtil.getDateTimeZone(
+					new Date(), region));
+			heartbeateventId.setVin(vehicle.getVin());
+			heartBeatEvent.setEngine(rawData.getConcoxGpsData().getHbdacc());
+			heartBeatEvent.setGps(rawData.getConcoxGpsData().getGpsTracking());
+			heartBeatEvent.setGsm(rawData.getConcoxGpsData().getGsmSignal());
+			heartBeatEvent.setBatteryVoltage(rawData.getConcoxGpsData()
+					.getVoltageLevel());
+			heartBeatEvent.setPowerSupply(rawData.getConcoxGpsData()
+					.getCharge());
+			heartBeatEvent.setId(heartbeateventId);
+			fleetTrackingDeviceListenerBO.persistHeartBeatEvent(heartBeatEvent,
+					vehicleComposite);
+		} catch (Exception e) {
+			LOGGER.error("ConcoxDeviceProtocolHandler: prepareAndPersistHeartBeatEvents:"
+					+ e);
+		}
+	}
+}

@@ -1,0 +1,166 @@
+package com.skt.alerts;
+
+import java.util.Date;
+import java.util.List;
+import java.util.Map;
+
+import javax.ejb.Local;
+
+import com.eiw.alerts.AlertsEJBRemote;
+import com.eiw.server.companyadminpu.Companybranch;
+import com.eiw.server.companyadminpu.Provider;
+import com.eiw.server.companyadminpu.Pushnotificationdevices;
+import com.eiw.server.companyadminpu.User;
+import com.eiw.server.fleettrackingpu.Freeformgeo;
+import com.eiw.server.fleettrackingpu.Route;
+import com.eiw.server.fleettrackingpu.Vehicle;
+import com.eiw.server.studenttrackingpu.Alertevents;
+import com.eiw.server.studenttrackingpu.Demoalerts;
+import com.eiw.server.studenttrackingpu.Routetrip;
+import com.eiw.server.studenttrackingpu.Schoolroute;
+import com.eiw.server.studenttrackingpu.StudentGeozone;
+import com.eiw.server.studenttrackingpu.Studentdetails;
+import com.eiw.server.studenttrackingpu.Studentevent;
+import com.eiw.server.studenttrackingpu.Tripstops;
+import com.eiw.server.studenttrackingpu.Vehicletimings;
+import com.skt.client.dto.SktInitData;
+import com.skt.client.dto.StudentData;
+import com.skt.client.dto.VehicleTripTimeDto;
+import com.skt.client.dto.VehicltimingReport;
+
+@Local
+public interface SKTAlertsEJBremote extends AlertsEJBRemote {
+
+	void manageStudentAbsence();
+
+	void persistvehicletimingreport(VehicltimingReport vehicltimingReport);
+
+	List<Route> getRoute(int id);
+
+	Map<String, StudentData> getStudentDetailsMap(String vin, String compId,
+			String branchId);
+
+	List<Integer> getLastCrossedBusStop(String vin, boolean isSchool, int tripid);
+
+	List<Tripstops> getSKTTripStops(String vin, String companyId, String brachId);
+
+	Provider getSimulatedLatLong(int id);
+
+	StudentData setStudentdata(Studentdetails studentDetails);
+
+	User getParentname(Alertevents alertevents);
+
+	int getSchoolGeoZoneId(String string);
+
+	Map<String, String> getSKTalerttypesMap();
+
+	Companybranch getbranchId(User parent);
+
+	User getParent(Studentdetails studentdetails);
+
+	void studentStatusUpdate();
+
+	Alertevents getLastAlertEvent(String stin, String alertType);
+
+	List<Schoolroute> getRouteTrips(String vin, String companyId,
+			String branchId);
+
+	boolean isAlertAlreadyGenerated(Alertevents alertEvent2, Routetrip routetrip);
+
+	Provider getDevicesForPushNotificatoinDemo(String providerName);
+
+	User getParent(String mobile, String fullName);
+
+	Studentdetails getStudentDetails(String owner);
+
+	void updateProvider(Provider provider);
+
+	SktInitData getDBforSKT();
+
+	void persistDemoAlerts(Demoalerts demoAlerts);
+
+	boolean checkIsGateDevice(String imeiNo);
+
+	List<Alertevents> getStudentsNotDAS(String vin);
+
+	List<Alertevents> getStudentsNotDAB(String vin, Tripstops tripstop);
+
+	List<Pushnotificationdevices> getPushNotificationDevice(String contactNo,
+			String companyId);
+
+	String updateStaticSchoolRouteDetails(String routeId, String mode);
+
+	String updateVehicleDetails(String vin, String mode);
+
+	String updateStudentDetails(String tagId, String mode);
+
+	void persistDemoAlerts(Alertevents alertevents);
+
+	Routetrip getCurrentRouteTrip(String vin, String compId, String branchId);
+
+	List<Freeformgeo> getSchoolGeoZone(String companyId);
+
+	boolean getFreeformGeoStatus(Float latitude, Float longitude,
+			List<Freeformgeo> schoolGeozone);
+
+	Routetrip getUpcomingTrip(String vin, String companyId, String branchId,
+			Date eventTimeStamp);
+
+	Routetrip getUpcomingDayTrip(String vin, String companyId, String branchId);
+
+	Tripstops getTripStopById(Long stopPointId);
+
+	boolean isAlertSubscribed(String stin, String alerttype);
+
+	String getVehicleUserId(String vin);
+
+	boolean getApplicationStatus();
+
+	boolean checkEnableOrDisableDay(Date eventTimeStamp, String companyId,
+			String string);
+
+	String checkIsPresent(Studentdetails studentdetails);
+
+	boolean checkIsSchoolAttendence(String schoolId);
+
+	List<VehicleTripTimeDto> getVehicleTripTime(String companyId,
+			String branchId);
+
+	void alertForAttendence(List<Studentdetails> studentdetails, String type);
+
+	List<Routetrip> getRouteTrip(String vin, String companyId, String branchId,
+			Date eventTimeStamp);
+
+	Alertevents insertAlertevents(Alertevents alertEvent, String mode);
+
+	List<Studentdetails> getStudentDetailsByStop(Long stopPointId);
+
+	List<Studentdetails> getStudentsDetails(String zoneid, Routetrip routetrip);
+
+	List<StudentGeozone> getStudentGeozones(String vin);
+
+	List<StudentGeozone> getStudentGeoConfig(String vinGeo, String type);
+
+	Vehicletimings getVehicleTimings(Vehicle vehicle);
+
+	Schoolroute insertRoute(Schoolroute schoolroute);
+
+	Routetrip insertTrip(Routetrip routetrip, String mode);
+
+	Tripstops insertStop(Tripstops tripStop);
+
+	StudentGeozone insertGeozone(StudentGeozone studentGeozone);
+
+	void updateStudentDetails(Studentdetails studentdetails);
+
+	Tripstops getTripStopByLatLng(Routetrip routeTrip, Studentevent studentevent);
+
+	StudentGeozone getGeozoneByStopId(Long stopPointId);
+
+	boolean isTripOver(Routetrip routeTrip);
+
+	Routetrip getDropTrip(String vin);
+
+	List<Studentdetails> getStudentDetailsByVin(String vin);
+
+}

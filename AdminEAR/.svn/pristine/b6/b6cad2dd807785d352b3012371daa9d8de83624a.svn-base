@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<application xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:application="http://java.sun.com/xml/ns/javaee" xmlns="http://java.sun.com/xml/ns/javaee" xsi:schemaLocation="http://java.sun.com/xml/ns/javaee http://java.sun.com/xml/ns/javaee/application_6.xsd" id="Application_ID" version="6">
+  <display-name>AdminEAR</display-name>
+  <module>
+    <web>
+      <web-uri>AdminWeb.war</web-uri>
+      <context-root>fleettrackingadmin</context-root>
+    </web>
+  </module>
+  <module>
+    <ejb>AdminEJB.jar</ejb>
+  </module>
+  <module>
+    <ejb>DCFrameworkBO.jar</ejb>
+  </module>
+</application>

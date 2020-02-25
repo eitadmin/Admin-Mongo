@@ -1,0 +1,30 @@
+package com.eiw.server;
+
+import javax.ejb.EJB;
+import javax.ejb.Stateless;
+import javax.websocket.CloseReason;
+import javax.websocket.OnClose;
+import javax.websocket.OnMessage;
+import javax.websocket.Session;
+import javax.websocket.server.ServerEndpoint;
+
+import com.eiw.cron.AlertConfigEJB;
+import com.eiw.cron.AlertConfigEJBRemote;
+
+@Stateless
+@ServerEndpoint("/alertsmanagerendpoint")
+public class AlertsManagerEndPoint {
+
+	@EJB
+	AlertConfigEJB alertConfigEJB;
+	
+	@OnMessage
+	public void recieveMessage(String content, Session session) {
+		alertConfigEJB.addAlertsSession(session, content);
+	}
+
+	@OnClose
+	public void closeSession(Session session, CloseReason reason) {
+		alertConfigEJB.removeAlertsSession(session, reason);
+	}
+}

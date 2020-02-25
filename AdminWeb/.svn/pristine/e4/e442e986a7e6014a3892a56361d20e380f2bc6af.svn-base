@@ -1,0 +1,903 @@
+/*padding: top rght btm left */ /* CSS for Alert Widget starts here */
+.myalert_hp {
+	padding: 2px 2px 2px 2px;
+	text-align: center;
+	vertical-align: middle;
+}
+
+.myalert_lbl {
+	padding: 2px 2px 2px 2px;
+	font-size: 12px;
+}
+
+.lblLanguage {
+	font: normal 11px arial, tahoma, helvetica, sans-serif;
+}
+
+.alert_bg {
+	background-color: #f1f1f1;
+}
+
+/* CSS for Alert Widget ends here */ /* Mainpanel starts here */
+.myDecoratorPanel {
+	border-color: #cccccc;
+	border-width: 1px;
+	border-style: solid;
+	padding: 2px;
+	background-color: white;
+	text-align: center;
+}
+
+.ftTop {
+	margin-top:-30px;
+	background: url("images/main_bg.gif") repeat-x;
+}
+
+.glass {
+	opacity: 0.4;
+	filter: alpha(opacity =                   40);
+}
+
+.headerHp {
+	padding: 0px 15px 0px 15px;
+}
+
+.logoutStyle {
+	padding-right: 0px 5px;
+}
+
+.hpName {
+	padding: 0px 0px 0px 2px;
+}
+
+.hpicon {
+	padding: 0px 10px;
+	cursor: pointer;
+}
+
+.text_ftTop {
+	font-size: 11px;
+	font-family: sans-serif;
+	font-weight: bold;
+	padding: 5px 10px 0px 1px;
+	color: White;
+}
+
+.lbl_ftTop {
+	font-size: 10px;
+	font-family: sans-serif;
+	font-weight: bold;
+	padding: 5px 0px 0px 10px;
+	color: black;
+}
+
+.hpLogout {
+	padding-right: 30px;
+	padding-bottom: 10px;
+}
+
+.logoutLbl {
+	font-family: sans-serif;
+	font-size: 11px;
+	font-weight: bold;
+	color: white;
+	padding: 0px 5px 0px 5px;
+	border: 1px;
+	border-bottom-style: solid;
+	cursor: pointer;
+}
+
+.mainPanel {
+	background-color: white;
+}
+
+.servermtn {
+	font-size: 13px;
+}
+
+.servermtn {
+	font-size: 13px;
+}
+
+/* Main panel ends here */ /*common starts here */
+.stackButton {
+	width: 200px;
+	height: 40px;
+	font-size: 11px;
+	color: white;
+	background: #fcf9b6;
+	border-style: solid;
+	border-width: 1px 1px 1px 1px;
+	border-color: #1e1e1e;
+	font-weight: bold;
+}
+
+.paddDown5 {
+	padding-bottom: 5px;
+}
+
+.txt20 {
+	font-size: 20px;
+	font-weight: bold;
+}
+
+.txt17 {
+	font-size: 17px;
+	font-weight: bold;
+}
+
+.txt16 {
+	font-size: 16px;
+}
+
+.txt15 {
+	font-size: 15px;
+}
+
+.txt14 {
+	font-size: 14px;
+	font-weight: bold;
+}
+
+.txt13 {
+	font-size: 13px;
+	font-weight: bold;
+}
+
+.txt12 {
+	font-size: 12px;
+	font-weight: bold;
+}
+
+.txt11 {
+	font-size: 11px;
+	font-weight: bold;
+}
+
+.loginButton {
+	font-size: 11px;
+	color: white;
+	background: #0a6978; /*#769399;*/
+	border-style: solid;
+	border-width: 1px 1px 1px;
+	font-weight: bold;
+}
+
+.commonButton {
+	font-size: 11px;
+	font-weight: bold;
+}
+
+.searchHeader {
+	font-size: small;
+	background-color: #5f7361;
+	color: white;
+	vertical-align: middle;
+}
+
+.rowEven-FlexTable {
+	color: #1A1A1A;
+	background-color: #ebecee;
+	text-align: left;
+	font-size: 12px;
+	vertical-align: middle;
+}
+
+.rowOdd-FlexTable {
+	color: Black;
+	background-color: #f9f9f9;
+	text-align: left;
+	font-size: 12px;
+	vertical-align: middle;
+}
+
+.paddRght22 {
+	padding-right: 22px;
+}
+
+/* common ends here  */ /* CSS for DashBoard starts here */
+.hdrPaddRght {
+	padding-left: 30px;
+}
+
+.DashBoardBodyPanelVp1 {
+	border-color: #bbb5a0;
+	border-width: 2px;
+	border-style: solid;
+	border-top-width: 0px;
+	width: 357px;
+	height: 100px;
+}
+
+.DashBrdHdrPnl {
+	background: url("../img/header_title1.gif") no-repeat 0px 0px;
+	color: black;
+	height: 36px;
+	padding-left: 10px;
+	padding-top: 10px;
+}
+
+.DashBrdHdrTxt {
+	font-weight: bold;
+	color: black;
+	padding-left: 5px;
+}
+
+/* CSS for DashBoard ends here */
+.borderTest {
+	border: 1px 1px 1px 1px;
+	border-color: blue;
+	border-style: solid;
+}
+
+/* CSS for Tracking Screens starts here*/
+.bckTrkHPnl {
+	padding: 2px 2px 2px 10px;
+}
+
+.mnPopupPanel {
+	padding: 1px 1px 1px 1px;
+	border: 2px 2px 2px 2px;
+	border-color: #ccc;
+	border-style: solid;
+}
+
+.hdrPopupPanel {
+	padding: 2px 2px 2px 2px;
+}
+
+/* CSS for Tracking Screens ends here*/
+.NavPanel {
+	border: 2px 2px 2px 2px;
+	border-color: #99bbe8;
+	border-style: solid;
+}
+
+/*
+.bodyPanel {
+	text-align: center;
+	vertical-align: middle;
+	margin-left: 170px;
+	margin-top: 50px;
+}*/ /* CSS for Add vehicle Form */
+.opLabel {
+	font-size: 12px;
+	padding-right: 15px;
+	padding-bottom: 10px;
+}
+
+.TxtBox {
+	width: 100px;
+}
+
+.selectOperator {
+	background: url(../img/lens_small.png) no-repeat;
+}
+
+.popupStyle {
+	padding: 10px 2px 2px 2px;
+}
+
+.buttonBar {
+	background-color: #f6f6f6;
+}
+
+.buttonBarBorder {
+	background-color: #ffe3d6;
+}
+
+.myListBoxLabel {
+	font: normal 12px tahoma, arial, helvetica, sans-serif;
+	padding: 2px 3px 3px 0px;
+}
+
+.myListBox {
+	width: 210px;
+	background: white;
+	color: black;
+	font-size: 11px;
+}
+
+.border1px {
+	border: 1px solid #000000;
+}
+
+.borderblue1px {
+	border: 1px solid #b1ad69;
+}
+
+.paddleft20px {
+	padding-left: 10px;
+	padding-top: 10px;
+}
+
+.toolsPanel {
+	border: 2px solid aqua;
+}
+
+/***css  for visualization table***/
+.headerRow {
+	font-weight: bold;
+	background-color: #efefef;
+}
+
+.oddTableRow {
+	background-color: #d4fbd4;
+}
+
+.selectedTableRow {
+	background-color: #9dcbaa;
+	/*background-color: #d6e9f8;*/
+}
+
+.hoverTableRow {
+	background-color: #e3c1d7;
+}
+
+.roundBorder {
+	border-top: 0px;
+	border-bottom: 0px;
+	border-left: 3px;
+	border-right: 3px;
+	border-color: #c4c4c4;
+	border-style: solid;
+}
+
+.roundBorderInside {
+	border-top: 0px;
+	border-bottom: 0px;
+	border-left: 2px;
+	border-right: 2px;
+	border-color: #9a9a9a;
+	border-style: solid;
+}
+
+.inside-RP {
+	background-color: #9a9a9a;
+}
+
+.cbg-RP {
+	background-color: #c4c4c4;
+}
+
+.tblHeaderStyle {
+	background-color: #484848;
+	color: white;
+}
+
+.flexTableInVhClkHndlr { /*	border: 1px black solid;*/
+	font: normal 10px arial, tahoma, helvetica, sans;
+	padding-right: 5px;
+	padding-left: 5px;
+}
+
+.flexTableInVhClkHndlr1 { /*	border: 1px black solid;*/
+	padding-right: 5px;
+	padding-left: 5px;
+}
+
+.flexTableInVhClkHndlr2 { /*	border: 1px black solid;*/
+	font: normal 10px arial, tahoma, helvetica, sans;
+}
+
+.lightGrayStyle {
+	font-size: 12px;
+	color: #A4A4A4;
+}
+
+.formLabel {
+	color: black;
+	font: normal 11px arial, tahoma, helvetica, sans-serif;
+}
+
+.formLabelWhite { /*color: white;*/
+	font: bold 11px arial, tahoma, helvetica, sans-serif;
+	padding-top: 8px;
+}
+
+.vehicleDetailsTable {
+	padding: 4px 4px 4px 4px;
+	border-spacing: 2pt;
+}
+
+.formLabelGeofenc {
+	color: black;
+	font: normal 14px arial, tahoma, helvetica, sans-serif;
+}
+
+.mapBorder {
+	border: thin;
+	border-style: solid;
+}
+
+.labelTitle {
+	color: white;
+	font: normal 14px arial, tahoma, helvetica, sans-serif;
+}
+
+.whiteLabelBG {
+	font: bold 10px arial, tahoma, helvetica, sans-serif;
+	background-color: white;
+}
+
+.grayLabelBG {
+	font: normal 10px arial, tahoma, helvetica, sans-serif;
+	background-color: gray;
+}
+
+.bodyPanel {
+	border-spacing: 10px;
+}
+
+.flexCell {
+	border: thin;
+	border-color: black;
+	border-style: solid;
+}
+
+.mapHPanel {
+	padding: 3px 8px 3px 8px;
+}
+
+.bgLabel {
+	color: #C7A317;
+	font-size: 11px;
+	font-family: arial;
+}
+
+.bgLabel1 {
+	color: red;
+	font-size: 11px;
+	font-family: arial;
+}
+
+.grid {
+	border-color: #cccccc;
+	border-width: 1px;
+	border-style: solid;
+	padding: 2px;
+	text-align: center;
+}
+
+.border1px {
+	border-color: #aaaaff;
+	border-width: 1px;
+	border-style: solid;
+}
+
+.daysGrid {
+	width: 100%;
+	text-align: center;
+}
+
+.daysHeader {
+	width: 100%;
+	text-align: center;
+	background: url("../img/light-hd.gif") repeat-x;
+	font-weight: bold;
+	font-size: 11px;
+	font-family: tahoma, arial, verdana, sans-serif;
+}
+
+.daysGridHeader {
+	width: 100%;
+	text-align: center;
+	color: #15428b;
+	font-weight: bold;
+	font-size: 11px;
+	font-family: tahoma, arial, verdana, sans-serif;
+}
+
+.paddingLeftRight {
+	padding-left: 10px;
+	padding-right: 10px;
+}
+
+.paddingStyle {
+	padding: 5px 5px 5px 5px;
+	border: 0px 0px 0px 0px;
+}
+
+.contentPanel {
+	padding: 5px 5px 5px 5px;
+}
+
+.daysGridLabel {
+	text-align: center;
+	color: #15428a;
+	font: bold 11px arial, tahoma, helvetica, sans-serif;
+}
+
+.vPanelbg {
+	background-color: white;
+	width: 100%;
+	text-align: center;
+	color: #15428b;
+	font-size: 11px;
+	font-family: tahoma, arial, verdana, sans-serif;
+	border-style: solid;
+	border-width: 1px;
+}
+
+.todayVPanelbg {
+	background-color: #C2DFFb;
+	width: 100%;
+	text-align: center;
+	color: #15428b;
+	font-size: 11px;
+	font-family: tahoma, arial, verdana, sans-serif;
+}
+
+.borderBottom {
+	border-top: 0px;
+	border-bottom: 1px;
+	border-left: 0px;
+	border-right: 1px;
+	border-color: #c4c4c4;
+	border-style: solid;
+	background: url("../img/light-hd.gif") repeat-x;
+	padding-left: 2px;
+	padding-right: 3px;
+	padding-top: 3px;
+}
+
+.menuStyle {
+	background-color: gray;
+	width: 1px;
+	height: 1px;
+}
+
+.menuBg {
+	background: url("../img/btn_arrow.gif") no-repeat;
+}
+
+.blueBg {
+	background-color: gray;
+}
+
+.smsPanel {
+	color: black;
+	font: normal 11px arial, tahoma, helvetica, sans-serif;
+	padding: 5px 5px 5px 5px;
+}
+
+.flexio {
+	border-style: solid;
+	border-width: 1px;
+	color: black;
+	padding: 5px 5px 5px 5px;
+	font: normal 12px arial, tahoma, helvetica, sans-serif;
+}
+
+.hPanel {
+	padding-left: 3px;
+}
+
+.htmlTable1 {
+	font-size: 11px;
+	font-family: tahoma, arial, verdana, sans-serif;
+	border-collapse: collapse;
+}
+
+.htmlTable1 td {
+	border: 1px solid #d0d0d0;
+	padding-left: 3px;
+	text-align: center;
+}
+
+.htmlTable1 th {
+	text-align: center;
+	border: 1px solid #d0d0d0;
+	font-weight: bold;
+	padding-left: 3px;
+}
+
+.gridcolor {
+	font-style: normal;
+	font-weight: bold;
+	color: red;
+}
+
+.gridcolorpanic {
+	color: blue;
+}
+
+.gridcoloralt {
+	color: #467be7;
+}
+
+.gridcolorlast {
+	color: #369a36;
+}
+
+.closeBtn {
+	background-image: url(../resources/images/default/qtip/close.gif);
+}
+
+.greenbg {
+	background: url(../images/slate/shared/glass-bg.gif) repeat-x scroll
+		left top !important;
+}
+
+.alertPanel {
+	background-color: white;
+}
+
+.img36x30 {
+	width: 36px;
+	height: 30px;
+}
+
+.fTbleHdr {
+	font-weight: bold;
+	background-color: #d5c6b4;
+}
+
+.textboxlbl {
+	font: bold 10px arial, tahoma, helvetica, sans-serif;
+}
+
+.hPanelBtn {
+	padding: 5px;
+}
+
+.alertBlue {
+	text-align: center;
+	color: blue;
+	font-weight: bold;
+}
+
+.errorMsg {
+	position: fixed;
+	z-index: auto;
+	margin-top: 0px;
+	margin-bottom: 0px;
+	margin-right: 0px;
+	margin-left: 500px;
+}
+
+.lblLanguage {
+	font: normal 11px arial, tahoma, helvetica, sans-serif;
+}
+
+.gridTable {
+	font-size: 11px;
+	font-family: tahoma, arial, verdana, sans-serif;
+	border-collapse: collapse;
+}
+
+.gridTable td {
+	border: 1px solid #d0d0d0;
+	text-align: center;
+	padding: 5px 5px 5px 5px;
+}
+
+.gridTable th {
+	text-align: center;
+	border: 1px solid #d0d0d0;
+	font-weight: bold;
+	padding: 5px 5px 5px 5px;
+}
+
+.gridUserPref {
+	font: normal 11px arial, tahoma, helvetica, sans-serif;
+}
+
+.logo {
+	margin-top: -20px;
+}
+
+.setHeaderLogo {
+	padding: 0px 15px 0px 15px;
+	margin-top: -20px;
+}
+
+.alertSys {
+	font-size: 14px;
+}
+
+/* login screen */
+.welcomeScreenStyle {
+	font-family: tahoma, arial, verdana, sans-serif;
+	font-size: 11px;
+	color: #000;
+	line-height: 8px;
+	background-color: white;
+}
+
+.rowEven-FlexTableDb {
+	font-family: arial;
+	color: #1A1A1A;
+	background-color: #d3d3d3;
+	text-align: left;
+	font-size: 11px;
+	vertical-align: middle;
+}
+
+.rowOdd-FlexTableDb {
+	font-family: arial;
+	color: Black;
+	background-color: #f9f9f9;
+	text-align: left;
+	font-size: 11px;
+	vertical-align: middle;
+}
+
+.mainwidth {
+	width: 333px;
+	padding-bottom: 1px;
+	display: inline;
+	float: left;
+	background: #b7b7b7;
+}
+
+.width150 {
+	float: left;
+	width: 130px;
+	margin-left: 1px;
+	margin-top: 1px;
+	background: #f0f0f0;
+	display: inline
+}
+
+.width248 {
+	float: left;
+	width: 200px;
+	height: 95px;
+	display: inline;
+	background: #f0f0f0;
+	margin-left: 1px;
+	margin-top: 1px;
+}
+
+.width248_1 {
+	float: left;
+	width: 200px;
+	height: 95px;
+	display: inline;
+	background: #f0f0f0;
+	margin-left: 1px;
+	margin-top: 1px;
+}
+
+.width247 {
+	float: left;
+	width: 199px;
+	margin-left: 1px;
+	margin-top: 1px;
+	display: inline;
+	text-indent: 6px;
+	font-family: Arial, Helvetica, sans-serif;
+	font-size: 11px;
+	color: #333;
+}
+
+.welcome {
+	font-size: 11px;
+	font-family: tahoma, arial, verdana, sans-serif;
+	background-color: #efefef;
+	border: 1px solid #d0d0d0;
+}
+
+.welcome td {
+	padding-left: 3px;
+	text-align: left;
+}
+
+.welcome th {
+	text-align: left;
+	border: 1px solid #d0d0d0;
+	font-weight: bold;
+	padding-left: 3px;
+}
+
+.Flex {
+	font-family: arial;
+	color: Black;
+	text-align: left;
+	font-size: 11px;
+	vertical-align: middle;
+	padding-right: 5px;
+	background-color: #f0f0f0;
+}
+
+.FlexHeader {
+	font-size: 11px;
+	font-weight: bold;
+}
+
+.image {
+	padding: 5px 0px 5px 5px;
+}
+
+.background {
+	background-color: #efefef;
+}
+
+.msg-left {
+	background: url("../img/welcome-left.png") no-repeat;
+	width: 14px;
+	height: 28px;
+	float: right;
+}
+
+.msg-right {
+	background: url("../img/welcome-right.png") no-repeat;
+	width: 14px;
+	height: 28px;
+	float: right;
+}
+
+.msg { /*	position: fixed;
+	z-index: auto;
+	margin-top: 0px;
+	margin-bottom: 0px;
+	margin-right: 0px;
+	margin-left: 500px;*/
+	float: right;
+	background: url("../img/welcome.png");
+	font-size: 11px;
+	font-family: tahoma, arial, verdana, sans-serif;
+	font-weight: bold;
+	color: #000;
+	height: 20px;
+	text-align: center;
+	padding-top: 8px;
+}
+
+.flextable {
+	margin: 0px auto;
+}
+
+.cpmsgcenter {
+	z-index: auto;
+	margin: 0px auto;
+}
+
+.x-component {
+	font-size: 11px;
+	font-family: tahoma, arial, verdana, sans-serif;
+}
+
+.lblAlertConfig {
+	font: normal 13px arial, tahoma, helvetica, sans-serif;
+}
+
+.itemlabel {
+	font: normal 12px arial, tahoma, helvetica, sans-serif;
+}
+
+.alertGridSpacing {
+	padding-left: 10px;
+	font-size: 11px;
+	font-family: tahoma, arial, verdana, sans-serif;
+	font-weight: bold;
+}
+
+.processImage {
+	margin-left: 580px;
+	margin-top: 300px;
+	float: left;
+}
+
+.rowHeader-FlexTable {
+	font: bold 11px arial, tahoma, helvetica, sans-serif;
+	background-color: #ece7dc;
+}
+
+.rowHeader-EvenFlexTable {
+	font: bold 11px arial, tahoma, helvetica, sans-serif;
+	background-color: #e3e3e3;
+}
+
+.featureHeader {
+	padding-right: 5px;
+}
+
+.labelcursor {
+	cursor:pointer;
+}
+
+.smallFont{
+     font-size: smaller;
+}

@@ -1,0 +1,2 @@
+serviceClass: com.eiw.client.AdminPortalService
+path: 7370C777A010CE2B5B4392D837148792.gwt.rpc

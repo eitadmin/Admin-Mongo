@@ -1,0 +1,575 @@
+package com.eiw.device.handler;
+
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.net.Socket;
+import java.net.SocketTimeoutException;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import org.jboss.logging.Logger;
+import org.json.JSONObject;
+
+import com.eiw.device.deepsea.DeepSeaByteWrapper;
+import com.eiw.device.ejb.FleetTrackingDeviceListenerBORemote;
+import com.eiw.device.ejb.VehicleComposite;
+import com.eiw.device.handler.method.SKTHandlerMethods;
+import com.eiw.device.listener.ListenerStarter;
+import com.eiw.server.TimeZoneUtil;
+import com.eiw.server.bo.BOFactory;
+import com.eiw.server.fleettrackingpu.Vehicle;
+import com.eiw.server.fleettrackingpu.Vehicleevent;
+import com.eiw.server.fleettrackingpu.VehicleeventId;
+
+public class DeepSeaDeviceHandler extends DeviceHandler {
+	private static final Logger LOGGER = Logger.getLogger("listener");
+
+	FleetTrackingDeviceListenerBORemote fleetTrackingDeviceListenerBO = BOFactory
+			.getFleetTrackingDeviceListenerBORemote();
+
+	public static Map<String, List<DeepSeaByteWrapper>> avlDataMap = new HashMap<String, List<DeepSeaByteWrapper>>();
+	public static String commandStatus;
+	private SKTHandlerMethods sktHandlerMethods;
+
+	@Override
+	public void handleDevice() {
+		LOGGER.info("Entered DeepSea five mins Handle Device:" + new Date());
+		sktHandlerMethods = new SKTHandlerMethods();
+		DataInputStream clientSocketDis = null;
+		DataOutputStream dos = null;
+		try {
+			clientSocket.setSoTimeout(1500000);
+			clientSocketDis = new DataInputStream(clientSocket.getInputStream());
+			DeepSeaByteWrapper data = new DeepSeaByteWrapper(clientSocketDis);
+			data.unwrapDataFromStream();
+			LOGGER.info("Test 1 DeepSea");
+			String imeiNo = data.getImei();
+			VehicleComposite vehicleComposite = fleetTrackingDeviceListenerBO
+					.getVehicle(imeiNo);
+			if (vehicleComposite == null) {
+				LOGGER.error("DeepSeaDeviceHandler: handleDevice: Received IMEI No is invalid... returning... "
+						+ imeiNo);
+				return;
+			}
+			super.deviceImei = imeiNo;
+			ListenerStarter.DeepSeaDeviceHandlerMap.put(deviceImei, this);
+			// LOGGER.info("Test 2:" + super.deviceImei);
+			insertService(data, vehicleComposite, fleetTrackingDeviceListenerBO);
+			while (true) {
+				DeepSeaByteWrapper rawData = new DeepSeaByteWrapper(
+						clientSocketDis);
+				rawData.unwrapDataFromStream();
+				LOGGER.info("Entered while");
+				if (ListenerStarter.DeepSeaDeviceHandlerMap.get(deviceImei) == null) {
+					LOGGER.info("No Handler Found for IMEI NO: " + deviceImei);
+					ListenerStarter.DeepSeaDeviceHandlerMap.put(deviceImei,
+							this);
+				}
+				insertService(rawData, vehicleComposite,
+						fleetTrackingDeviceListenerBO);
+			}
+		} catch (SocketTimeoutException e) {
+			LOGGER.error("SocketTimeoutException while receiving the Message "
+					+ e);
+		} catch (Exception e) {
+			LOGGER.error("DeepSeaDeviceHandler:Exception while receiving the Message "
+					+ e);
+		} finally {
+			if (deviceImei != null) {
+				ListenerStarter.DeepSeaDeviceHandlerMap.remove(deviceImei);
+			}
+			cleanUpSockets(clientSocket, clientSocketDis, dos);
+			LOGGER.info("DeepSeaDeviceHandler DeviceCommunicatorThread:DeviceCommunicator Completed");
+		}
+	}
+
+	private void insertService(DeepSeaByteWrapper rawData,
+			VehicleComposite vehicleComposite,
+			FleetTrackingDeviceListenerBORemote fleetTrackingDeviceListenerBO) {
+		try {
+			LOGGER.info("Entered insert service");
+			Vehicle vehicle = vehicleComposite.getVehicle();
+			Vehicleevent vehicleEvent = prepareVehicleEvents(vehicle, rawData,
+					fleetTrackingDeviceListenerBO);
+			List<Vehicleevent> vehicleEvents = new ArrayList<Vehicleevent>();
+			if (vehicleEvent != null)
+				vehicleEvents.add(vehicleEvent);
+			if (!vehicleEvents.isEmpty() && vehicleEvents.size() != 0) {
+				for (Vehicleevent vehicleevent : vehicleEvents) {
+					sktHandlerMethods.persistEventAndGenerateAlert(null,
+							vehicleComposite, rawData.getImei(), "deepsea",
+							vehicleevent);
+				}
+			}
+		} catch (Exception e) {
+			LOGGER.error("Exception while persisting data :: " + e);
+		}
+	}
+
+	private Vehicleevent prepareVehicleEvents(Vehicle vehicle,
+			DeepSeaByteWrapper avl,
+			FleetTrackingDeviceListenerBORemote fleetTrackingDeviceListenerBO) {
+		Vehicleevent vehicleEvent = new Vehicleevent();
+		List<DeepSeaByteWrapper> avlDataList = new ArrayList<DeepSeaByteWrapper>();
+		avlDataList.add(avl);
+		LOGGER.info("Entered preparedVehicleevent, vin:" + vehicle.getVin());
+		try {
+			if (!avlDataMap.isEmpty() && avlDataMap.size() != 0) {
+				if (avlDataMap.get(vehicle.getVin()) != null
+						&& !avlDataMap.get(vehicle.getVin()).isEmpty()
+						&& avlDataMap.get(vehicle.getVin()).size() != 0) {
+					avlDataList.addAll(avlDataMap.get(vehicle.getVin()));
+				}
+			}
+			avlDataMap.put(vehicle.getVin(), avlDataList);
+			if (avlDataMap.get(vehicle.getVin()) != null
+					&& avlDataMap.get(vehicle.getVin()).size() >= 7) {
+				DeepSeaByteWrapper avlData = avlDataMap.get(vehicle.getVin())
+						.get(0);
+				String region = fleetTrackingDeviceListenerBO
+						.getTimeZoneRegion(vehicle.getVin());
+				VehicleeventId vehicleeventId = new VehicleeventId();
+				LOGGER.info("Deepsea Modbus: " + avlData.getmodbusData());
+				LOGGER.info("Deepsea Gettime: "
+						+ avlData.getmodbusData().getDateTime());
+				vehicleeventId.setEventTimeStamp(TimeZoneUtil.getDateTimeZone(
+						avlData.getmodbusData().getDateTime(), region));
+				vehicleEvent.setServerTimeStamp(TimeZoneUtil
+						.getDateInTimeZone());
+				vehicleeventId.setVin(vehicle.getVin());
+				vehicleEvent.setId(vehicleeventId);
+				JSONObject ioevent = new JSONObject();
+				boolean isFirstReq = false, isSecondReq = false, isThirdReq = false, isFourthReq = false, isFifthReq = false, isSixthReq = false, isSeventhReq = false;
+				if (avlDataMap.get(vehicle.getVin()).get(0).getmodbusData()
+						.getLattitude() == null
+						|| avlDataMap.get(vehicle.getVin()).get(0)
+								.getmodbusData().getLongitude() == null
+						|| Float.valueOf(avlDataMap.get(vehicle.getVin())
+								.get(0).getmodbusData().getLattitude()) < 1
+						|| Float.valueOf(avlDataMap.get(vehicle.getVin())
+								.get(0).getmodbusData().getLongitude()) < 1) {
+					Vehicleevent preVE = fleetTrackingDeviceListenerBO
+							.getPrevVe(vehicle.getVin());
+					if (preVE != null) {
+						vehicleEvent.setLatitude(preVE.getLatitude());
+						vehicleEvent.setLongitude(preVE.getLongitude());
+					} else {
+						LOGGER.info("Return vin:" + vehicle.getVin());
+						return null;
+					}
+
+				} else {
+					vehicleEvent.setLatitude(Double.valueOf(avlDataMap
+							.get(vehicle.getVin()).get(0).getmodbusData()
+							.getLattitude()));
+					vehicleEvent.setLongitude(Double.valueOf(avlDataMap
+							.get(vehicle.getVin()).get(0).getmodbusData()
+							.getLongitude()));
+				}
+				vehicleEvent.setSpeed(avlDataMap.get(vehicle.getVin()).get(0)
+						.getmodbusData().getSpeed());
+				for (DeepSeaByteWrapper avlDataIo : avlDataMap.get(vehicle
+						.getVin())) {
+					if (avlDataIo.getmodbusData().getRequestId() == 1) {
+						if (avlDataIo.getmodbusData().getEngineSpeed() != null
+								&& !avlDataIo.getmodbusData().getEngineSpeed()
+										.equalsIgnoreCase("0"))
+							vehicleEvent.setEngine(true);
+						else
+							vehicleEvent.setEngine(false);
+					}
+
+					switch (avlDataIo.getmodbusData().getRequestId()) {
+					case 1:
+						isFirstReq = true;
+						ioevent.put("oilPressure", avlDataIo.getmodbusData()
+								.getOilPressure());
+						ioevent.put("coolandTemperature", avlDataIo
+								.getmodbusData().getCoolandTemperature());
+						ioevent.put("oilTemperature", avlDataIo.getmodbusData()
+								.getOilTemperature());
+						ioevent.put("fuelLeval", avlDataIo.getmodbusData()
+								.getFuelLeval());
+						ioevent.put("chargeAlternatorVoltage", avlDataIo
+								.getmodbusData().getChargeAlternatorVoltage());
+						ioevent.put("batteryVoltage", avlDataIo.getmodbusData()
+								.getBatteryVoltage());
+						ioevent.put("engineSpeed", avlDataIo.getmodbusData()
+								.getEngineSpeed());
+						ioevent.put("generatorFrequency", avlDataIo
+								.getmodbusData().getGeneratorFrequency());
+						ioevent.put("genL1_N_V", avlDataIo.getmodbusData()
+								.getGenL1_N_V());
+						ioevent.put("genL2_N_V", avlDataIo.getmodbusData()
+								.getGenL2_N_V());
+						ioevent.put("genL3_N_V", avlDataIo.getmodbusData()
+								.getGenL3_N_V());
+						ioevent.put("genL1_L2_V", avlDataIo.getmodbusData()
+								.getGenL1_L2_V());
+						ioevent.put("genL2_L3_V", avlDataIo.getmodbusData()
+								.getGenL2_L3_V());
+						ioevent.put("genL3_L1_V", avlDataIo.getmodbusData()
+								.getGenL3_L1_V());
+						ioevent.put("genL1C", avlDataIo.getmodbusData()
+								.getGenL1C());
+						ioevent.put("genL2C", avlDataIo.getmodbusData()
+								.getGenL2C());
+						ioevent.put("genL3C", avlDataIo.getmodbusData()
+								.getGenL3C());
+						ioevent.put("genEarthC", avlDataIo.getmodbusData()
+								.getGenEarthC());
+						ioevent.put("genL1W", avlDataIo.getmodbusData()
+								.getGenL1W());
+						ioevent.put("genL2W", avlDataIo.getmodbusData()
+								.getGenL2W());
+						ioevent.put("genL3W", avlDataIo.getmodbusData()
+								.getGenL3W());
+						ioevent.put("genC_lag", avlDataIo.getmodbusData()
+								.getGenC_lag());
+						ioevent.put("mainsFrequency", avlDataIo.getmodbusData()
+								.getMainsFrequency());
+						ioevent.put("mainsL1_N_V", avlDataIo.getmodbusData()
+								.getMainsL1_N_V());
+						ioevent.put("mainsL2_N_V", avlDataIo.getmodbusData()
+								.getMainsL2_N_V());
+						ioevent.put("mainsL3_N_V", avlDataIo.getmodbusData()
+								.getMainsL3_N_V());
+						ioevent.put("mainsL1L2_N_V", avlDataIo.getmodbusData()
+								.getMainsL1L2_N_V());
+						ioevent.put("mainsL2L3_N_V", avlDataIo.getmodbusData()
+								.getMainsL2L3_N_V());
+						ioevent.put("mainsL3L1_N_V", avlDataIo.getmodbusData()
+								.getMainsL3L1_N_V());
+						ioevent.put("mainsV_lag", avlDataIo.getmodbusData()
+								.getMainsV_lag());
+						ioevent.put("gen_P_R", avlDataIo.getmodbusData()
+								.getGen_P_R());
+						ioevent.put("mains_P_R", avlDataIo.getmodbusData()
+								.getMains_P_R());
+						ioevent.put("mainsC_lag", avlDataIo.getmodbusData()
+								.getMainsC_lag());
+						ioevent.put("mainsL1C", avlDataIo.getmodbusData()
+								.getMainsL1C());
+						ioevent.put("mainsL2C", avlDataIo.getmodbusData()
+								.getMainsL2C());
+						ioevent.put("mainsL3C", avlDataIo.getmodbusData()
+								.getMainsL3C());
+						ioevent.put("mainsEarthC", avlDataIo.getmodbusData()
+								.getMainsEarthC());
+						ioevent.put("mainsL1W", avlDataIo.getmodbusData()
+								.getMainsL1W());
+						ioevent.put("mainsL2W", avlDataIo.getmodbusData()
+								.getMainsL2W());
+						ioevent.put("mainsL3W", avlDataIo.getmodbusData()
+								.getMainsL3W());
+						break;
+					case 2:
+						isSecondReq = true;
+						ioevent.put("busC_lag", avlDataIo.getmodbusData()
+								.getBusC_lag());
+						ioevent.put("busFrequency", avlDataIo.getmodbusData()
+								.getBusFrequency());
+						ioevent.put("busL1_N_V", avlDataIo.getmodbusData()
+								.getBusL1_N_V());
+						ioevent.put("busL2_N_V", avlDataIo.getmodbusData()
+								.getBusL2_N_V());
+						ioevent.put("busL3_N_V", avlDataIo.getmodbusData()
+								.getBusL3_N_V());
+						ioevent.put("busL1L2_N_V", avlDataIo.getmodbusData()
+								.getBusL1L2_N_V());
+						ioevent.put("busL2L3_N_V", avlDataIo.getmodbusData()
+								.getBusL2L3_N_V());
+						ioevent.put("busL3L1_N_V", avlDataIo.getmodbusData()
+								.getBusL3L1_N_V());
+						ioevent.put("busL1C", avlDataIo.getmodbusData()
+								.getBusL1C());
+						ioevent.put("busL2C", avlDataIo.getmodbusData()
+								.getBusL2C());
+						ioevent.put("busL3C", avlDataIo.getmodbusData()
+								.getBusL3C());
+						ioevent.put("busEarthC", avlDataIo.getmodbusData()
+								.getBusEarthC());
+						if (avlDataIo.getmodbusData().getBusL1W() != null)
+							ioevent.put("busL1W", avlDataIo.getmodbusData()
+									.getBusL1W());
+						if (avlDataIo.getmodbusData().getBusL2W() != null)
+							ioevent.put("busL2W", avlDataIo.getmodbusData()
+									.getBusL2W());
+						if (avlDataIo.getmodbusData().getBusL3W() != null)
+							ioevent.put("busL3W", avlDataIo.getmodbusData()
+									.getBusL3W());
+						if (avlDataIo.getmodbusData().getBus_P_R() != null)
+							ioevent.put("bus_P_R", avlDataIo.getmodbusData()
+									.getBus_P_R());
+						break;
+					case 3:
+						isThirdReq = true;
+						ioevent.put("gen_tot_W", avlDataIo.getmodbusData()
+								.getGen_tot_W());
+						ioevent.put("genL1VA", avlDataIo.getmodbusData()
+								.getGenL1VA());
+						ioevent.put("genL2VA", avlDataIo.getmodbusData()
+								.getGenL2VA());
+						ioevent.put("genL3VA", avlDataIo.getmodbusData()
+								.getGenL3VA());
+						ioevent.put("gentotVA", avlDataIo.getmodbusData()
+								.getGentotVA());
+						ioevent.put("genL1VAr", avlDataIo.getmodbusData()
+								.getGenL1VAr());
+						ioevent.put("genL2VAr", avlDataIo.getmodbusData()
+								.getGenL2VAr());
+						ioevent.put("genL3VAr", avlDataIo.getmodbusData()
+								.getGenL3VAr());
+						ioevent.put("gentotVAr", avlDataIo.getmodbusData()
+								.getGentotVAr());
+						ioevent.put("genPFL1", avlDataIo.getmodbusData()
+								.getGenPFL1());
+						ioevent.put("genPFL2", avlDataIo.getmodbusData()
+								.getGenPFL2());
+						ioevent.put("genPFL3", avlDataIo.getmodbusData()
+								.getGenPFL3());
+						ioevent.put("genPFAvg", avlDataIo.getmodbusData()
+								.getGenPFAvg());
+						ioevent.put("genFullPower", avlDataIo.getmodbusData()
+								.getGenFullPower());
+						ioevent.put("genFullVAr", avlDataIo.getmodbusData()
+								.getGenFullVAr());
+						ioevent.put("mains_tot_W", avlDataIo.getmodbusData()
+								.getMains_tot_W());
+						ioevent.put("mainsL1VA", avlDataIo.getmodbusData()
+								.getMainsL1VA());
+						ioevent.put("mainsL2VA", avlDataIo.getmodbusData()
+								.getMainsL2VA());
+						ioevent.put("mainsL3VA", avlDataIo.getmodbusData()
+								.getMainsL3VA());
+						ioevent.put("mainstotVA", avlDataIo.getmodbusData()
+								.getMainstotVA());
+						ioevent.put("mainsL1VAr", avlDataIo.getmodbusData()
+								.getMainsL1VAr());
+						ioevent.put("mainsL2VAr", avlDataIo.getmodbusData()
+								.getMainsL2VAr());
+						ioevent.put("mainsL3VAr", avlDataIo.getmodbusData()
+								.getMainsL3VAr());
+						ioevent.put("mainstotVAr", avlDataIo.getmodbusData()
+								.getMainstotVAr());
+						ioevent.put("mainsPFL1", avlDataIo.getmodbusData()
+								.getMainsPFL1());
+						ioevent.put("mainsPFL2", avlDataIo.getmodbusData()
+								.getMainsPFL2());
+						ioevent.put("mainsPFL3", avlDataIo.getmodbusData()
+								.getMainsPFL3());
+						ioevent.put("mainsPFAvg", avlDataIo.getmodbusData()
+								.getMainsPFAvg());
+						break;
+					case 4:
+						isFourthReq = true;
+						ioevent.put("genL1lag", avlDataIo.getmodbusData()
+								.getGenL1lag());
+						ioevent.put("genL2lag", avlDataIo.getmodbusData()
+								.getGenL2lag());
+						ioevent.put("genL3lag", avlDataIo.getmodbusData()
+								.getGenL3lag());
+						ioevent.put("gentotlag", avlDataIo.getmodbusData()
+								.getGentotlag());
+						ioevent.put("genL1FullPower", avlDataIo.getmodbusData()
+								.getGenL1FullPower());
+						ioevent.put("genL2FullPower", avlDataIo.getmodbusData()
+								.getGenL2FullPower());
+						ioevent.put("genL3FullPower", avlDataIo.getmodbusData()
+								.getGenL3FullPower());
+						break;
+					case 5:
+						isFifthReq = true;
+						ioevent.put("currentTime", avlDataIo.getmodbusData()
+								.getCurrentTime());
+						ioevent.put("timeToNextEngineMainatenance", avlDataIo
+								.getmodbusData()
+								.getTimeToNextEngineMainatenance());
+						ioevent.put("timeOfNextEngineMainatenance", avlDataIo
+								.getmodbusData()
+								.getTimeOfNextEngineMainatenance());
+						ioevent.put("engineRunTime", avlDataIo.getmodbusData()
+								.getEngineRunTime());
+						ioevent.put("genPositiveKWH", avlDataIo.getmodbusData()
+								.getGenPositiveKWH());
+						ioevent.put("genNegativeKWH", avlDataIo.getmodbusData()
+								.getGenNegativeKWH());
+						ioevent.put("genKVAH", avlDataIo.getmodbusData()
+								.getGenKVAH());
+						ioevent.put("genKVArH", avlDataIo.getmodbusData()
+								.getGenKVArH());
+						ioevent.put("numberOfStart", avlDataIo.getmodbusData()
+								.getNumberOfStart());
+						ioevent.put("mainsPositiveKWH", avlDataIo
+								.getmodbusData().getMainsPositiveKWH());
+						ioevent.put("mainsNegativeKWH", avlDataIo
+								.getmodbusData().getMainsNegativeKWH());
+						ioevent.put("mainsKVAH", avlDataIo.getmodbusData()
+								.getMainsKVAH());
+						ioevent.put("mainsKVArH", avlDataIo.getmodbusData()
+								.getMainsKVArH());
+						ioevent.put("busPositiveKWH", avlDataIo.getmodbusData()
+								.getBusPositiveKWH());
+						ioevent.put("busNegativeKWH", avlDataIo.getmodbusData()
+								.getBusNegativeKWH());
+						ioevent.put("busKVAH", avlDataIo.getmodbusData()
+								.getBusKVAH());
+						ioevent.put("busKVArH", avlDataIo.getmodbusData()
+								.getBusKVArH());
+						ioevent.put("fuelUsed", avlDataIo.getmodbusData()
+								.getFuelUsed());
+						ioevent.put("maxPositiveMains_ROCOF", avlDataIo
+								.getmodbusData().getMaxPositiveMains_ROCOF());
+						ioevent.put("maxNegativeMains_ROCOF", avlDataIo
+								.getmodbusData().getMaxNegativeMains_ROCOF());
+						ioevent.put("maxPositiveMains_Vector", avlDataIo
+								.getmodbusData().getMaxPositiveMains_Vector());
+						ioevent.put("maxNegativeMains_Vector", avlDataIo
+								.getmodbusData().getMaxNegativeMains_Vector());
+						ioevent.put(
+								"timeToNextEngineMainatenanceAlerm1",
+								avlDataIo
+										.getmodbusData()
+										.getTimeToNextEngineMainatenanceAlerm1());
+						ioevent.put(
+								"timeOfNextEngineMainatenanceAlerm1",
+								avlDataIo
+										.getmodbusData()
+										.getTimeOfNextEngineMainatenanceAlerm1());
+						ioevent.put(
+								"timeToNextEngineMainatenanceAlerm2",
+								avlDataIo
+										.getmodbusData()
+										.getTimeToNextEngineMainatenanceAlerm2());
+						ioevent.put(
+								"timeOfNextEngineMainatenanceAlerm2",
+								avlDataIo
+										.getmodbusData()
+										.getTimeOfNextEngineMainatenanceAlerm2());
+						ioevent.put(
+								"timeToNextEngineMainatenanceAlerm3",
+								avlDataIo
+										.getmodbusData()
+										.getTimeToNextEngineMainatenanceAlerm3());
+						break;
+					case 6:
+						isSixthReq = true;
+						ioevent.put("alarm", avlDataIo.getmodbusData()
+								.getAlarm());
+						break;
+					case 7:
+						isSeventhReq = true;
+						break;
+					}
+
+				}
+				vehicleEvent.setIoevent(ioevent.toString());
+				avlDataMap.get(vehicle.getVin()).clear();
+				if (!(isFirstReq && isSecondReq && isThirdReq && isFourthReq
+						&& isFifthReq && isSixthReq && isSeventhReq))
+					vehicleEvent.setIoevent("{}");
+				// if (avlDataMap.get(vehicle.getVin()).get(0).getmodbusData()
+				// .getSpeed() == 0)
+				// vehicleEvent.setEngine(false);
+				// else
+				// vehicleEvent.setEngine(true);
+
+			} else {
+				LOGGER.info("Return vin:" + vehicle.getVin());
+				LOGGER.info("Map Size: "
+						+ avlDataMap.get(vehicle.getVin()).size());
+				return null;
+			}
+		} catch (Exception e) {
+			LOGGER.error("DeepSeaDeviceProtocolHandler: PreparevehicleEvents:"
+					+ e);
+			e.printStackTrace();
+		}
+		return vehicleEvent;
+	}
+
+	public float distance(float lat1, float lng1, float lat2, float lng2) {
+		double earthRadius = 6371000; // meters
+		double dLat = Math.toRadians(lat2 - lat1);
+		double dLng = Math.toRadians(lng2 - lng1);
+		double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+				+ Math.cos(Math.toRadians(lat1))
+				* Math.cos(Math.toRadians(lat2)) * Math.sin(dLng / 2)
+				* Math.sin(dLng / 2);
+		double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+		float dist = (float) (earthRadius * c);
+
+		return dist;
+	}
+
+	public String sendCommand(String command, Socket DeepseaDeviceSocket) {
+		String result = null;
+		LOGGER.info("Entered send command:" + command);
+		try {
+			DataOutputStream out = new DataOutputStream(
+					DeepseaDeviceSocket.getOutputStream());
+			String type = command.split(",")[0];
+			VehicleComposite vehicleComposite = fleetTrackingDeviceListenerBO
+					.getVehicle(command.split(",")[1]);
+			LOGGER.info("type:" + type);
+			if (type.split("_")[0].equalsIgnoreCase("cutOffEngine")) {
+				String cutOffCommand = "<LOCK," + command.split(",")[1] + ";";
+				LOGGER.info(cutOffCommand);
+				out.write(cutOffCommand.getBytes(), 0, cutOffCommand.length());
+				int i = 0;
+				while (i < 120) {
+					if (commandStatus != null) {
+						if (commandStatus.startsWith("ACK")) {
+							result = "cutOffEngine OK";
+							fleetTrackingDeviceListenerBO.updateLockStatus(
+									vehicleComposite.getVehicle(), 1);
+						} else if (commandStatus.startsWith("NACK"))
+							result = null;
+						else if (commandStatus
+								.equalsIgnoreCase("Invalid Request"))
+							result = null;
+						else
+							result = commandStatus;
+						commandStatus = null;
+						break;
+					} else {
+						Thread.sleep(1000);
+					}
+					i++;
+				}
+			} else if (type.split("_")[0].equalsIgnoreCase("restoreEngine")) {
+				String cutOffCommand = "<UNLOCK," + command.split(",")[1] + ";";
+				LOGGER.info(cutOffCommand);
+				out.write(cutOffCommand.getBytes(), 0, cutOffCommand.length());
+				int i = 0;
+				while (i < 120) {
+					if (commandStatus != null) {
+						if (commandStatus.startsWith("ACK")) {
+							result = "restoreEngine OK";
+							fleetTrackingDeviceListenerBO.updateLockStatus(
+									vehicleComposite.getVehicle(), 0);
+						} else if (commandStatus.startsWith("NACK"))
+							result = null;
+						else if (commandStatus
+								.equalsIgnoreCase("Invalid Request"))
+							result = null;
+						else
+							result = commandStatus;
+						commandStatus = null;
+						break;
+					} else {
+						Thread.sleep(1000);
+					}
+					i++;
+				}
+			}
+		} catch (Exception e) {
+			LOGGER.error("SendCommand : " + e);
+			e.printStackTrace();
+		}
+		return result;
+	}
+}

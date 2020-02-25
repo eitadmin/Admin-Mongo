@@ -1,0 +1,55 @@
+<!DOCTYPE>
+<html>
+<head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<link type="text/css" rel="stylesheet" href="css/common.css">
+<link type="text/css" rel="stylesheet" href="css/login.css">
+<link type="text/css" rel="stylesheet" href="css/standard.css">
+<link rel="stylesheet" type="text/css" href="resources/css/gxt-all.css" />
+<link rel="stylesheet" href="jqxjs/styles/jqx.base.css" type="text/css" />
+<link rel="stylesheet" href="jqxjs/styles/jqx.energyblue.css"
+	type="text/css" />
+<link rel="stylesheet" href="jqxjs/styles/jqx.bootstrap.css"
+	type="text/css" />
+<link rel="stylesheet" href="jqxjs/styles/jqx.arctic.css"
+	type="text/css" />
+<link rel="stylesheet" href="jqxjs/styles/jqx.fresh.css" type="text/css" />
+<link rel="stylesheet" href="jqxjs/styles/jqx.energyblue.css"
+	type="text/css" />
+
+
+<script type="text/javascript" src="jqxjs/jquery-1.10.2.min.js"></script>
+<script type="text/javascript" src="jqxjs/jqx-all.js"></script>
+<script type="text/javascript" src="jqxjs/jqxdata.export.js"></script>
+
+<title>Fleet Tracking</title>
+<script language='javascript' src='resources/flash/swfobject.js'></script>
+<script type="text/javascript" language="javascript"
+	src="ltmsweb/ltmsweb.nocache.js"></script>
+<script type="text/javascript" language="javascript"
+	src="jqgridcustom2.js"></script>
+<script type="text/javascript" language="javascript" src="dashBoard.js"></script>
+<style>
+#background {
+    width: 100%;
+    height: 100%;
+    position: fixed;
+    left: 0px;
+    top: 0px;
+    z-index: -1;
+}
+
+.stretch {
+    width: 100%;
+    height: 100%;
+}
+</style>
+</head>
+<body>
+<div id="background_login"
+		style="position: fixed; left: 0px; top: 0px; z-index: -1; background: url(css/images/22.jpg) no-repeat; background-size: cover; width: 100%; height: 100%;">
+		</div>
+	
+	
+</body>
+</html>

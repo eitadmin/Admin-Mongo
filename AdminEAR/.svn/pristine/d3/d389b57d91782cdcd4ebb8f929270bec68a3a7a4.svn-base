@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?><project-modules id="moduleCoreId" project-version="1.5.0">
+    <wb-module deploy-name="AdminEAR">
+        <wb-resource deploy-path="/" source-path="/ear"/>
+        <dependent-module archiveName="CommonUtil.jar" deploy-path="/lib" handle="module:/resource/CommonUtil/CommonUtil">
+            <dependency-type>uses</dependency-type>
+        </dependent-module>
+        <dependent-module archiveName="AdminWeb.war" deploy-path="/" handle="module:/resource/AdminWeb/AdminWeb">
+            <dependent-object/>
+            <dependency-type>uses</dependency-type>
+        </dependent-module>
+        <dependent-module archiveName="AdminEJB.jar" deploy-path="/" handle="module:/resource/AdminEJB/AdminEJB">
+            <dependent-object/>
+            <dependency-type>uses</dependency-type>
+        </dependent-module>
+        <dependent-module archiveName="DCFrameworkBO.jar" deploy-path="/" handle="module:/classpath/lib/AdminEAR/DCFrameworkBO.jar">
+            <dependent-object/>
+            <dependency-type>uses</dependency-type>
+        </dependent-module>
+    </wb-module>
+</project-modules>

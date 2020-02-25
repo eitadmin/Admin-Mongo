@@ -1,0 +1,47 @@
+package com.eiw.cron.report;
+
+import java.text.SimpleDateFormat;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.List;
+
+import org.jboss.logging.Logger;
+import org.quartz.Job;
+import org.quartz.JobExecutionContext;
+import org.quartz.JobExecutionException;
+
+import com.eiw.server.TimeZoneUtil;
+import com.eiw.server.bo.BOFactory;
+
+public class ConsolidateSummaryByDayReport implements Job {
+
+	private static final Logger LOGGER = Logger.getLogger("report");
+	SimpleDateFormat sdfDate = new SimpleDateFormat("yyyy-MM-dd");
+
+	@Override
+	public void execute(JobExecutionContext arg0) throws JobExecutionException {
+		// TODO Auto-generated method stub
+		LOGGER.info("NewSummaryDayReport::Entering CronJobKSA Class");
+		SummaryEJBRemote summaryEJB = BOFactory.getSummaryEJBRemote();
+		List<Object> listVehicles = summaryEJB.vehicleListVin();
+
+		Calendar calendar = TimeZoneUtil.getDateForTimeZones(new Date(),
+				"Asia/Riyadh");
+		calendar.add(Calendar.DATE, -1);
+		String eventDate = TimeZoneUtil.getDate(calendar.getTime());
+		for (int i = 0; i < listVehicles.size(); i++) {
+			Object obj = listVehicles.get(i);
+			String vin = (String) obj;
+
+			String reportDatasByDay = summaryEJB
+					.getConsolidateSummaryByDayReport(vin, eventDate);
+			if (!reportDatasByDay.equals("{}")) {
+				summaryEJB.insertConsolidateSummaryByDayReport(vin, eventDate,
+						reportDatasByDay);
+			}
+
+		}
+
+	}
+
+}

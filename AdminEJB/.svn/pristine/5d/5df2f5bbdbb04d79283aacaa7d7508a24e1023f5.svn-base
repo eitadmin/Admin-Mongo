@@ -1,0 +1,113 @@
+package com.eiw.alerts;
+
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+
+import java.util.Map;
+
+import org.json.JSONObject;
+
+import com.eiw.client.dto.VehicleData;
+import com.eiw.device.ejb.VehicleComposite;
+import com.eiw.server.TimeZoneUtil;
+import com.eiw.server.fleettrackingpu.Alertconfig;
+import com.eiw.server.fleettrackingpu.Heartbeatevent;
+import com.eiw.server.fleettrackingpu.VehicleHasIo;
+import com.eiw.server.fleettrackingpu.Vehiclealerts;
+import com.eiw.server.fleettrackingpu.Vehicleevent;
+
+public class CheckEventAlert implements CheckAlerts {
+	AlertsEJBRemote alertsEJBRemote = null;
+	AlertsManager alertsManager;
+	Alertconfig alertConfig = null;
+	Date lastUpdatedTime;
+	Map<String, String> eventAlert = new HashMap<String, String>() {
+		{
+			put("EA", "Emergency");
+			put("TA", "Tamper");
+			put("IN", "Ignition On");
+			put("IF", "Ignition Off");
+			put("BD", "Vehicle Battery Disconnect");
+			put("BR", "Vehicle Battery Reconnect");
+			put("HB", "Harsh Braking");
+			put("HA", "Harsh Acceleration");
+			put("RT", "Rash Turning");
+			put("DT", "Device Tempered");
+		}
+	};
+
+	public CheckEventAlert(AlertsManager alertsManager1) {
+		alertsManager = alertsManager1;
+		alertsEJBRemote = alertsManager.alertsEJBRemote;
+	}
+
+	public CheckEventAlert(Alertconfig alertConfig, Date lastUpdatedTime) {
+		this.alertConfig = alertConfig;
+		this.lastUpdatedTime = lastUpdatedTime;
+	}
+
+	@Override
+	public String manageAlerts(List<Vehicleevent> vehicleEvents, String vin,
+			String plateNo, List<VehicleHasIo> vehicleHasIo, int id,
+			VehicleComposite vehicleComposite) {
+		List<Vehiclealerts> vehiclealerts = new ArrayList<Vehiclealerts>();
+
+		try {
+			String mobile = alertConfig.getSmsNumber();
+			Vehicleevent ve = vehicleEvents.get(0);
+			JSONObject tages = new JSONObject(ve.getTags() == null ? "{}"
+					: ve.getTags());
+			if (tages.has("packetType")
+					&& !tages.getString("packetType").equalsIgnoreCase("NR")) {
+				String packetType = tages.getString("packetType");
+				String eventTime = TimeZoneUtil.getStrTZDateTime(ve.getId()
+						.getEventTimeStamp());
+				String latlng = ve.getLatitude() + "," + ve.getLongitude();
+				String description = " " + eventAlert.get(packetType)
+						+ " Alert%0DPlateNo:" + plateNo + "%0D%0DTime: "
+						+ eventTime + "%0D%0DLocation:" + latlng;
+
+				Vehiclealerts va = new Vehiclealerts();
+				va.setSubalerttype(packetType);
+				va.setAlerttype("EventAlert");
+				va.setDescription(description);
+				va.setLatlng(latlng);
+				va.setEventTimeStamp(ve.getId().getEventTimeStamp());
+				va.setSmsmobile(mobile);
+				va.setVin(vin);
+				va.setShowstatus(false);
+				vehiclealerts.add(va);
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+
+		if (!vehiclealerts.isEmpty()) {
+			lastUpdatedTime = alertsManager.persistVehicleAlert(alertConfig,
+					vehiclealerts, lastUpdatedTime);
+		}
+		return null;
+	}
+
+	@Override
+	public void addAlertManager(AlertsManager alertsManager) {
+		this.alertsManager = alertsManager;
+		this.alertsEJBRemote = alertsManager.alertsEJBRemote;
+
+	}
+
+	@Override
+	public void setLastUpdatedTime(Date lastUpdated) {
+		// TODO Auto-generated method stub
+
+	}
+
+	@Override
+	public String manageHbAlerts(Heartbeatevent heartbeatevent, String vin,
+			String PlateNo, VehicleComposite vehicleComposite) {
+		// TODO Auto-generated method stub
+		return null;
+	}
+}

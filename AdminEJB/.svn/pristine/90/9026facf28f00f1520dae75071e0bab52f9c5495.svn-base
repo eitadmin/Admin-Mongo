@@ -1,0 +1,80 @@
+package com.eiw.device.listener;
+
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
+
+import javax.annotation.PostConstruct;
+import javax.annotation.PreDestroy;
+import javax.ejb.Singleton;
+import javax.ejb.Startup;
+
+import org.jboss.logging.Logger;
+
+import com.eiw.device.handler.AIS140DeviceHandlerV1;
+import com.eiw.device.handler.AIS140DeviceHandlerV2;
+import com.eiw.device.handler.AIS140DeviceHandlerV3;
+import com.eiw.device.handler.APMKT_AIS1401ADeviceHandler;
+import com.eiw.device.handler.AndroidDeviceHandler;
+import com.eiw.device.handler.AuxusDeviceHandler;
+import com.eiw.device.handler.CantrackDeviceHandler;
+import com.eiw.device.handler.ConcoxDeviceHandler;
+import com.eiw.device.handler.DeepSeaDeviceHandler;
+import com.eiw.device.handler.DeepSeaDeviceHandlerTest;
+import com.eiw.device.handler.DeepseaDeviceHandler_V1;
+import com.eiw.device.handler.ItracDeviceHandler1;
+import com.eiw.device.handler.ItracDeviceHandler2;
+import com.eiw.device.handler.Prime07DeviceHandler;
+import com.eiw.device.handler.RuptelaDeviceHandler;
+import com.eiw.device.handler.SolarDeviceHandler;
+import com.eiw.device.handler.TeltonikaDeviceHandler;
+import com.eiw.device.handler.Tk103DeviceHandler;
+
+@Singleton
+@Startup
+public class ListenerStarter {
+	private static final Logger LOGGER = Logger.getLogger("listener");
+	public static Map<String, RuptelaDeviceHandler> ruptelaDeviceHandlerMap = new HashMap<String, RuptelaDeviceHandler>();
+	public static Map<String, ConcoxDeviceHandler> concoxDeviceHandlerMap = new HashMap<String, ConcoxDeviceHandler>();
+	public static Map<String, ItracDeviceHandler1> itracDeviceHandlerMap1 = new HashMap<String, ItracDeviceHandler1>();
+	public static Map<String, ItracDeviceHandler2> itracDeviceHandlerMap2 = new HashMap<String, ItracDeviceHandler2>();
+	public static Map<String, AuxusDeviceHandler> auxusDeviceHandlerMap = new HashMap<String, AuxusDeviceHandler>();
+	public static Map<String, DeepSeaDeviceHandler> DeepSeaDeviceHandlerMap = new HashMap<String, DeepSeaDeviceHandler>();
+	public static Map<String, SolarDeviceHandler> SolarDeviceHandlerMap = new HashMap<String, SolarDeviceHandler>();
+	public static Map<String, TeltonikaDeviceHandler> teltonikaDeviceHandlerMap = new HashMap<String, TeltonikaDeviceHandler>();
+	public static Map<String, AIS140DeviceHandlerV1> ais140DeviceHandlerMapV1 = new HashMap<String, AIS140DeviceHandlerV1>();
+	public static Map<String, AIS140DeviceHandlerV2> ais140DeviceHandlerMapV2 = new HashMap<String, AIS140DeviceHandlerV2>();
+	public static Map<String, Tk103DeviceHandler> tk103DeviceHandler = new HashMap<String, Tk103DeviceHandler>();
+	public static Map<String, Prime07DeviceHandler> prime07DeviceHandler = new HashMap<String, Prime07DeviceHandler>();
+	public static Map<String, AndroidDeviceHandler> androidDeviceHandlerMap = new HashMap<String, AndroidDeviceHandler>();
+	public static Map<String, AIS140DeviceHandlerV3> ais140DeviceHandlerMapV3 = new HashMap<String, AIS140DeviceHandlerV3>();
+	public static Map<String, CantrackDeviceHandler> cantrackDeviceHandlerMap = new HashMap<String, CantrackDeviceHandler>();
+	public static Map<String, DeepSeaDeviceHandlerTest> deepseaTestMap = new HashMap<String, DeepSeaDeviceHandlerTest>();
+	public static Map<String, DeepseaDeviceHandler_V1> deepseaDeviceV1Map = new HashMap<String, DeepseaDeviceHandler_V1>();
+
+	public static Map<String, APMKT_AIS1401ADeviceHandler> apmkt_AIS1401ADeviceHandlerMap = new HashMap<String, APMKT_AIS1401ADeviceHandler>();
+	public static final Devices[] DEVICE_TYPES_USED = { Devices.TELTONIKA,
+			Devices.RUPTELA, Devices.TZONE, Devices.CONCOX,
+			Devices.ITRAC_BASIC, Devices.ITRAC_ADVANCED, Devices.MEITRACK,
+			Devices.ITRAC_GPS_WATCH, Devices.TESTDEVICE, Devices.SPECTRUM,
+			Devices.IVETEL, Devices.UPS_IVETEL, Devices.DEEPSEA,
+			Devices.RUPTELA2, Devices.SOLAR, Devices.ANDROID,
+			Devices.TIMESTAMP, Devices.AIS140_V1, Devices.AIS140_V2,
+			Devices.TK103, Devices.Prime07, Devices.AIS140_V3,
+			Devices.CANTRACK, Devices.APMKT_AIS1401A, Devices.DeepseaTest,
+			Devices.DeepSeaV1 };
+
+	ListenerServer deviceTCPIPListener = new ListenerServer();
+
+	@PostConstruct
+	private void init() {
+		deviceTCPIPListener.startServer(DEVICE_TYPES_USED, "ltms_sa");
+		LOGGER.info("LTS Auto Started Successfully @" + new Date());
+	}
+
+	@PreDestroy
+	private void destroy() {
+		deviceTCPIPListener.stopServer("ltms_sa");
+		LOGGER.info("LTS Auto Stopped Successfully @" + new Date());
+	}
+}

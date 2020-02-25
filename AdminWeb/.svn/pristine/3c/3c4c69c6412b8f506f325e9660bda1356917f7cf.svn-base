@@ -1,0 +1,185 @@
+package com.eiw.server;
+
+import java.io.IOException;
+import java.util.Calendar;
+import java.util.Date;
+
+import javapns.Push;
+import javapns.communication.exceptions.CommunicationException;
+import javapns.communication.exceptions.KeystoreException;
+
+import javax.ejb.EJB;
+import javax.servlet.ServletException;
+import javax.servlet.http.HttpServlet;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+
+import org.apache.log4j.BasicConfigurator;
+
+import com.eiw.alerts.AlertsEJBRemote;
+import com.eiw.device.ejb.FleetTrackingDeviceListenerBORemote;
+import com.eiw.device.ejb.VehicleComposite;
+import com.eiw.device.handler.method.SKTHandlerMethods;
+import com.eiw.device.meitrack.Position;
+import com.eiw.server.companyadminpu.Provider;
+import com.eiw.server.fleettrackingpu.Vehicle;
+import com.eiw.server.fleettrackingpu.Vehicleevent;
+import com.eiw.server.fleettrackingpu.VehicleeventId;
+import com.eiw.server.studenttrackingpu.Alertevents;
+import com.google.android.gcm.server.Message;
+import com.google.android.gcm.server.Sender;
+import com.skt.alerts.MeitrackSimulator;
+import com.skt.alerts.SKTAlertsManager;
+
+@SuppressWarnings("serial")
+public class TestServlet extends HttpServlet {
+	@EJB
+	FleetTrackingDeviceListenerBORemote fleetTrackingDeviceListenerBO;
+	@EJB
+	public AlertsEJBRemote alertsEJBRemote;
+	String smsId = "";
+	Provider provider;
+	Alertevents alertEvent;
+	int k = -1;
+	String deliveryStatus = "not delivered";
+	SKTAlertsManager sktAlertsManager = new SKTAlertsManager();
+
+	// public AlertsEJBRemote alertsEJBRemote = BOFactory.getAlertsEJBRemote();
+
+	// public FleetTrackingDeviceListenerBORemote adminPortalImpl = BOFactory
+	// .getFleetTrackingDeviceListenerBORemote();
+
+	public void doGet(HttpServletRequest request, HttpServletResponse response)
+			throws ServletException, IOException {
+		System.out.println(TimeZoneUtil.getDateTimeZone(new Date(),
+				"Asia/Kolkata"));
+		System.out.println("testing servlet");
+		Vehicle vehicle = new Vehicle();
+		vehicle.setVin("EIT62356");
+		String mode = request.getParameter("mode");
+		if (mode.equalsIgnoreCase("simpleIOSPushMessage")) {
+			BasicConfigurator.configure();
+			try {
+				Push.combined("Welcome to SKT IIPSR application", 0,
+						"beep.caf", "properties/Certificates.p12", "MAC2014",
+						true,
+						"78acac016a91b60d56d6da6dce7fe48fd84b2c75e5c6a5b847dbf329b614e904");
+			} catch (CommunicationException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			} catch (KeystoreException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+
+		} else if (mode.equalsIgnoreCase("vehicleEvent")) {
+			// sendPushMessage test
+
+			Provider provider = sktAlertsManager.getSimulatedVehicleEvent();
+
+			MeitrackSimulator meitrackSimulator = new MeitrackSimulator();
+			String simulatedLatLongArray[] = provider.getFullName().split("_");
+			for (String simulatedLatLong : simulatedLatLongArray) {
+				Double routeStopLatitude = Double.parseDouble(simulatedLatLong
+						.split(",")[0]);
+				Double routeStopLongitude = Double.parseDouble(simulatedLatLong
+						.split(",")[1]);
+				String tags[] = provider.getLogoUrl().split(",");
+				for (String tag : tags)
+					meitrackSimulator.handleDevice1(provider.getMapApi(),
+							new Date(), true, routeStopLatitude.floatValue(),
+							routeStopLongitude.floatValue(), 0,
+							Integer.parseInt(provider.getMobile()), 0, tag,
+							provider.getOwner());
+				try {
+					Thread.sleep(Integer.parseInt(provider.getEmail()));
+				} catch (InterruptedException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+			}
+
+		} else if (mode.equalsIgnoreCase("test")) {
+			// sktAlertsManager.test();
+			// SummaryEJBRemote summaryEJB = BOFactory.getSummaryEJBRemote();
+			// Map<Long, List<ReportData>> employeeDatasDay = summaryEJB
+			// .getEmployeeSummaryDayReport("tabuk705", "2017-03-07");
+			// String getempsumaryReportvalues = new JSONSerializer().exclude(
+			// "*.class").deepSerialize(employeeDatasDay);
+			// System.out.println("Testservlet = " + getempsumaryReportvalues);
+			// summaryEJB.insertEmployeeDaySummary("tabuk705", "2017-03-07",
+			// employeeDatasDay);
+
+		} else if (mode.equalsIgnoreCase("ruptela")) {
+			Provider provider = sktAlertsManager.getSimulatedVehicleEvent();
+
+			SKTHandlerMethods handlerMethods = new SKTHandlerMethods();
+
+			Vehicleevent vehicleEvent = new Vehicleevent();
+			String simulatedLatLong = provider.getFullName();
+			Double routeStopLatitude = Double.parseDouble(simulatedLatLong
+					.split(",")[0]);
+			Double routeStopLongitude = Double.parseDouble(simulatedLatLong
+					.split(",")[1]);
+			vehicleEvent.setLatitude(routeStopLatitude);
+			vehicleEvent.setLongitude(routeStopLongitude);
+			vehicleEvent.setSpeed(Integer.parseInt(provider.getSpeedLimit()));
+			vehicleEvent.setEngine(false);
+			vehicleEvent.setOdometer(Long.valueOf(500));
+			vehicleEvent.setAi1(0);
+			vehicleEvent.setAi2(0);
+			vehicleEvent.setAi3(0);
+			vehicleEvent.setDi1(0);
+			vehicleEvent.setDi2(0);
+			vehicleEvent.setDi3(0);
+
+			/*Calendar myCal = Calendar.getInstance();
+			myCal.set(Calendar.YEAR, 2016);
+			myCal.set(Calendar.MONTH, 9);
+			myCal.set(Calendar.DAY_OF_MONTH,10);*/
+			Date eventTimeStamp = TimeZoneUtil.getDateTimeZone(
+					new Date(), "Asia/Kolkata");
+
+			//eventTimeStamp
+				//	.setHours(Integer.parseInt(provider.getAlertMailId()));
+
+			String imeiNo = provider.getMapApi();
+			VehicleComposite vehicleComposite = fleetTrackingDeviceListenerBO
+					.getVehicle(imeiNo);
+			VehicleeventId id = new VehicleeventId();
+			id.setEventTimeStamp(eventTimeStamp);
+			id.setVin(vehicleComposite.getVehicle().getVin());
+			vehicleEvent.setId(id);
+
+			Position position = new Position();
+			//position.setRfid("0008730941"); // with rfid
+			position.setRfid(provider.getLogoUrl()); // without rfid
+			position.setTime(eventTimeStamp);
+			position.setLatitude(routeStopLatitude);
+			position.setLongitude(routeStopLongitude);
+			handlerMethods.persistEventAndGenerateAlert(position,
+					vehicleComposite, imeiNo, "meitrack", vehicleEvent);
+		} else if (mode.equalsIgnoreCase("push")) {
+			String google = "AIzaSyA4ukKmrycft66ILNcwQCsrc1vC6Y1dNFM";
+			String deviceId = "APA91bHZigcYzIiWkZmSRmJqCT1WyyTIZAgVXocR2K7n2vBQb25ikTSpP_YmjGd4l8_8uxbgQiMEfkqSRG9UDHPbBi8afFrfRyWbfdn1BOo6j_wC7IYjTO4";
+			Sender sender = new Sender(google);
+			Message message = new Message.Builder().timeToLive(86400)
+					.delayWhileIdle(true).addData("success", "Hello-From-Push")
+					.build();
+			try {
+				sender.send(message, deviceId, 1);
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		}
+	}
+
+	public String getAsString(int integer) {
+		if (integer < 10) {
+			return "0" + integer;
+		}
+		return String.valueOf(integer);
+
+	}
+
+}

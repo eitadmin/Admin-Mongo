@@ -1,0 +1,835 @@
+package com.eiw.device.handler;
+
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.net.Socket;
+import java.net.SocketTimeoutException;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import org.jboss.logging.Logger;
+import org.json.JSONObject;
+
+import com.eiw.device.solar.SolarByteWrapper;
+import com.eiw.device.ejb.FleetTrackingDeviceListenerBORemote;
+import com.eiw.device.ejb.VehicleComposite;
+import com.eiw.device.handler.method.SKTHandlerMethods;
+import com.eiw.device.listener.ListenerStarter;
+import com.eiw.server.TimeZoneUtil;
+import com.eiw.server.bo.BOFactory;
+import com.eiw.server.fleettrackingpu.Vehicle;
+import com.eiw.server.fleettrackingpu.Vehicleevent;
+import com.eiw.server.fleettrackingpu.VehicleeventId;
+
+public class SolarDeviceHandler extends DeviceHandler {
+	private static final Logger LOGGER = Logger.getLogger("listener");
+	FleetTrackingDeviceListenerBORemote fleetTrackingDeviceListenerBO = BOFactory
+			.getFleetTrackingDeviceListenerBORemote();
+	public static Map<String, List<SolarByteWrapper>> avlDataMap = new HashMap<String, List<SolarByteWrapper>>();
+	public static String commandStatus;
+	private SKTHandlerMethods sktHandlerMethods;
+
+	@Override
+	public void handleDevice() {
+		LOGGER.info("Entered Solar five mins Handle Device:" + new Date());
+		sktHandlerMethods = new SKTHandlerMethods();
+		DataInputStream clientSocketDis = null;
+		DataOutputStream dos = null;
+		try {
+			clientSocket.setSoTimeout(1500000);
+			clientSocketDis = new DataInputStream(clientSocket.getInputStream());
+			SolarByteWrapper data = new SolarByteWrapper(clientSocketDis);
+			data.unwrapDataFromStream();
+			LOGGER.info("Test 1 Solar");
+			String imeiNo = data.getImei();
+			VehicleComposite vehicleComposite = fleetTrackingDeviceListenerBO
+					.getVehicle(imeiNo);
+			if (vehicleComposite == null) {
+				LOGGER.error("SolarDeviceHandler: handleDevice: Received IMEI No is invalid... returning... "
+						+ imeiNo);
+				return;
+			}
+			super.deviceImei = imeiNo;
+			ListenerStarter.SolarDeviceHandlerMap.put(deviceImei, this);
+			// LOGGER.info("Test 2:" + super.deviceImei);
+			insertService(data, vehicleComposite, fleetTrackingDeviceListenerBO);
+			while (true) {
+				SolarByteWrapper rawData = new SolarByteWrapper(clientSocketDis);
+				rawData.unwrapDataFromStream();
+				LOGGER.info("Entered while");
+				if (ListenerStarter.SolarDeviceHandlerMap.get(deviceImei) == null) {
+					LOGGER.info("No Handler Found for IMEI NO: " + deviceImei);
+					ListenerStarter.SolarDeviceHandlerMap.put(deviceImei, this);
+				}
+				insertService(rawData, vehicleComposite,
+						fleetTrackingDeviceListenerBO);
+			}
+		} catch (SocketTimeoutException e) {
+			LOGGER.error("SocketTimeoutException while receiving the Message "
+					+ e);
+		} catch (Exception e) {
+			LOGGER.error("SolarDeviceHandler:Exception while receiving the Message "
+					+ e);
+		} finally {
+			if (deviceImei != null) {
+				ListenerStarter.SolarDeviceHandlerMap.remove(deviceImei);
+			}
+			cleanUpSockets(clientSocket, clientSocketDis, dos);
+			LOGGER.info("SolarDeviceHandler DeviceCommunicatorThread:DeviceCommunicator Completed");
+		}
+	}
+
+	private void insertService(SolarByteWrapper rawData,
+			VehicleComposite vehicleComposite,
+			FleetTrackingDeviceListenerBORemote fleetTrackingDeviceListenerBO) {
+		try {
+			LOGGER.info("Entered insert service");
+			Vehicle vehicle = vehicleComposite.getVehicle();
+			Vehicleevent vehicleEvent = prepareVehicleEvents(vehicle, rawData,
+					fleetTrackingDeviceListenerBO);
+			List<Vehicleevent> vehicleEvents = new ArrayList<Vehicleevent>();
+			if (vehicleEvent != null)
+				vehicleEvents.add(vehicleEvent);
+			if (!vehicleEvents.isEmpty() && vehicleEvents.size() != 0) {
+				for (Vehicleevent vehicleevent : vehicleEvents) {
+					sktHandlerMethods.persistEventAndGenerateAlert(null,
+							vehicleComposite, rawData.getImei(), "Solar",
+							vehicleevent);
+				}
+			}
+		} catch (Exception e) {
+			LOGGER.error("Exception while persisting data :: " + e);
+		}
+	}
+
+	private Vehicleevent prepareVehicleEvents(Vehicle vehicle,
+			SolarByteWrapper avl,
+			FleetTrackingDeviceListenerBORemote entityManagerService) {
+		Vehicleevent vehicleEvent = new Vehicleevent();
+		List<SolarByteWrapper> avlDataList = new ArrayList<SolarByteWrapper>();
+		avlDataList.add(avl);
+		LOGGER.info("Entered preparedVehicleevent, vin:" + vehicle.getVin());
+		try {
+			if (!avlDataMap.isEmpty() && avlDataMap.size() != 0) {
+				if (avlDataMap.get(vehicle.getVin()) != null
+						&& !avlDataMap.get(vehicle.getVin()).isEmpty()
+						&& avlDataMap.get(vehicle.getVin()).size() != 0) {
+					avlDataList.addAll(avlDataMap.get(vehicle.getVin()));
+				}
+			}
+			avlDataMap.put(vehicle.getVin(), avlDataList);
+			if (avlDataMap.get(vehicle.getVin()) != null
+					&& avlDataMap.get(vehicle.getVin()).size() >= 8) {
+				SolarByteWrapper avlData = avlDataMap.get(vehicle.getVin())
+						.get(0);
+				String region = entityManagerService.getTimeZoneRegion(vehicle
+						.getVin());
+				VehicleeventId vehicleeventId = new VehicleeventId();
+				LOGGER.info("Solar Modbus: " + avlData.getmodbusData());
+				LOGGER.info("Solar Gettime: "
+						+ avlData.getmodbusData().getDateTime());
+				vehicleeventId.setEventTimeStamp(TimeZoneUtil.getDateTimeZone(
+						new Date(), region));
+				vehicleEvent.setServerTimeStamp(TimeZoneUtil
+						.getDateInTimeZone());
+				vehicleeventId.setVin(vehicle.getVin());
+				vehicleEvent.setId(vehicleeventId);
+				JSONObject ioevent = new JSONObject();
+				boolean isFirstReq = false, isSecondReq = false, isThirdReq = false, isFourthReq = false, isFifthReq = false, isSixthReq = false, isSeventhReq = false, isEighthReq = false, isNinthReq = false, isTenthReq = false, isEleventhReq = false, isTwelthReq = false;
+				if (avlDataMap.get(vehicle.getVin()).get(0).getmodbusData()
+						.getLattitude() == null
+						|| avlDataMap.get(vehicle.getVin()).get(0)
+								.getmodbusData().getLongitude() == null
+						|| Float.valueOf(avlDataMap.get(vehicle.getVin())
+								.get(0).getmodbusData().getLattitude()) < 1
+						|| Float.valueOf(avlDataMap.get(vehicle.getVin())
+								.get(0).getmodbusData().getLongitude()) < 1) {
+					Vehicleevent preVE = entityManagerService.getPrevVe(vehicle
+							.getVin());
+					if (preVE != null) {
+						vehicleEvent.setLatitude(preVE.getLatitude());
+						vehicleEvent.setLongitude(preVE.getLongitude());
+					} else {
+						LOGGER.info("Return vin:" + vehicle.getVin());
+						return null;
+					}
+
+				} else {
+					vehicleEvent.setLatitude(Double.valueOf(avlDataMap
+							.get(vehicle.getVin()).get(0).getmodbusData()
+							.getLattitude()));
+					vehicleEvent.setLongitude(Double.valueOf(avlDataMap
+							.get(vehicle.getVin()).get(0).getmodbusData()
+							.getLongitude()));
+				}
+				vehicleEvent.setSpeed(avlDataMap.get(vehicle.getVin()).get(0)
+						.getmodbusData().getSpeed());
+				for (SolarByteWrapper avlDataIo : avlDataMap.get(vehicle
+						.getVin())) {
+					if (avlDataIo.getmodbusData().getRequestId() == 1) {
+						if (avlDataIo.getmodbusData().getEngineSpeed() != null
+								&& !avlDataIo.getmodbusData().getEngineSpeed()
+										.equalsIgnoreCase("0"))
+							vehicleEvent.setEngine(true);
+						else
+							vehicleEvent.setEngine(false);
+					}
+
+					switch (avlDataIo.getmodbusData().getRequestId()) {
+					case 1:
+						isFirstReq = true;
+						ioevent.put("oilPressure", avlDataIo.getmodbusData()
+								.getOilPressure());
+						ioevent.put("coolandTemperature", avlDataIo
+								.getmodbusData().getCoolandTemperature());
+						ioevent.put("oilTemperature", avlDataIo.getmodbusData()
+								.getOilTemperature());
+						ioevent.put("fuelLeval", avlDataIo.getmodbusData()
+								.getFuelLeval());
+						ioevent.put("chargeAlternatorVoltage", avlDataIo
+								.getmodbusData().getChargeAlternatorVoltage());
+						ioevent.put("batteryVoltage", avlDataIo.getmodbusData()
+								.getBatteryVoltage());
+						ioevent.put("engineSpeed", avlDataIo.getmodbusData()
+								.getEngineSpeed());
+						ioevent.put("generatorFrequency", avlDataIo
+								.getmodbusData().getGeneratorFrequency());
+						ioevent.put("genL1_N_V", avlDataIo.getmodbusData()
+								.getGenL1_N_V());
+						ioevent.put("genL2_N_V", avlDataIo.getmodbusData()
+								.getGenL2_N_V());
+						ioevent.put("genL3_N_V", avlDataIo.getmodbusData()
+								.getGenL3_N_V());
+						ioevent.put("genL1_L2_V", avlDataIo.getmodbusData()
+								.getGenL1_L2_V());
+						ioevent.put("genL2_L3_V", avlDataIo.getmodbusData()
+								.getGenL2_L3_V());
+						ioevent.put("genL3_L1_V", avlDataIo.getmodbusData()
+								.getGenL3_L1_V());
+						ioevent.put("genL1C", avlDataIo.getmodbusData()
+								.getGenL1C());
+						ioevent.put("genL2C", avlDataIo.getmodbusData()
+								.getGenL2C());
+						ioevent.put("genL3C", avlDataIo.getmodbusData()
+								.getGenL3C());
+						ioevent.put("genEarthC", avlDataIo.getmodbusData()
+								.getGenEarthC());
+						ioevent.put("genL1W", avlDataIo.getmodbusData()
+								.getGenL1W());
+						ioevent.put("genL2W", avlDataIo.getmodbusData()
+								.getGenL2W());
+						ioevent.put("genL3W", avlDataIo.getmodbusData()
+								.getGenL3W());
+						ioevent.put("genC_lag", avlDataIo.getmodbusData()
+								.getGenC_lag());
+						ioevent.put("mainsFrequency", avlDataIo.getmodbusData()
+								.getMainsFrequency());
+						ioevent.put("mainsL1_N_V", avlDataIo.getmodbusData()
+								.getMainsL1_N_V());
+						ioevent.put("mainsL2_N_V", avlDataIo.getmodbusData()
+								.getMainsL2_N_V());
+						ioevent.put("mainsL3_N_V", avlDataIo.getmodbusData()
+								.getMainsL3_N_V());
+						ioevent.put("mainsL1L2_N_V", avlDataIo.getmodbusData()
+								.getMainsL1L2_N_V());
+						ioevent.put("mainsL2L3_N_V", avlDataIo.getmodbusData()
+								.getMainsL2L3_N_V());
+						ioevent.put("mainsL3L1_N_V", avlDataIo.getmodbusData()
+								.getMainsL3L1_N_V());
+						ioevent.put("mainsV_lag", avlDataIo.getmodbusData()
+								.getMainsV_lag());
+						ioevent.put("gen_P_R", avlDataIo.getmodbusData()
+								.getGen_P_R());
+						ioevent.put("mains_P_R", avlDataIo.getmodbusData()
+								.getMains_P_R());
+						ioevent.put("mainsC_lag", avlDataIo.getmodbusData()
+								.getMainsC_lag());
+						ioevent.put("mainsL1C", avlDataIo.getmodbusData()
+								.getMainsL1C());
+						ioevent.put("mainsL2C", avlDataIo.getmodbusData()
+								.getMainsL2C());
+						ioevent.put("mainsL3C", avlDataIo.getmodbusData()
+								.getMainsL3C());
+						ioevent.put("mainsEarthC", avlDataIo.getmodbusData()
+								.getMainsEarthC());
+						ioevent.put("mainsL1W", avlDataIo.getmodbusData()
+								.getMainsL1W());
+						ioevent.put("mainsL2W", avlDataIo.getmodbusData()
+								.getMainsL2W());
+						ioevent.put("mainsL3W", avlDataIo.getmodbusData()
+								.getMainsL3W());
+						break;
+					case 2:
+						isSecondReq = true;
+						ioevent.put("busC_lag", avlDataIo.getmodbusData()
+								.getBusC_lag());
+						ioevent.put("busFrequency", avlDataIo.getmodbusData()
+								.getBusFrequency());
+						ioevent.put("busL1_N_V", avlDataIo.getmodbusData()
+								.getBusL1_N_V());
+						ioevent.put("busL2_N_V", avlDataIo.getmodbusData()
+								.getBusL2_N_V());
+						ioevent.put("busL3_N_V", avlDataIo.getmodbusData()
+								.getBusL3_N_V());
+						ioevent.put("busL1L2_N_V", avlDataIo.getmodbusData()
+								.getBusL1L2_N_V());
+						ioevent.put("busL2L3_N_V", avlDataIo.getmodbusData()
+								.getBusL2L3_N_V());
+						ioevent.put("busL3L1_N_V", avlDataIo.getmodbusData()
+								.getBusL3L1_N_V());
+						ioevent.put("busL1C", avlDataIo.getmodbusData()
+								.getBusL1C());
+						ioevent.put("busL2C", avlDataIo.getmodbusData()
+								.getBusL2C());
+						ioevent.put("busL3C", avlDataIo.getmodbusData()
+								.getBusL3C());
+						ioevent.put("busEarthC", avlDataIo.getmodbusData()
+								.getBusEarthC());
+						if (avlDataIo.getmodbusData().getBusL1W() != null)
+							ioevent.put("busL1W", avlDataIo.getmodbusData()
+									.getBusL1W());
+						if (avlDataIo.getmodbusData().getBusL2W() != null)
+							ioevent.put("busL2W", avlDataIo.getmodbusData()
+									.getBusL2W());
+						if (avlDataIo.getmodbusData().getBusL3W() != null)
+							ioevent.put("busL3W", avlDataIo.getmodbusData()
+									.getBusL3W());
+						if (avlDataIo.getmodbusData().getBus_P_R() != null)
+							ioevent.put("bus_P_R", avlDataIo.getmodbusData()
+									.getBus_P_R());
+						break;
+					case 3:
+						isThirdReq = true;
+						ioevent.put("gen_tot_W", avlDataIo.getmodbusData()
+								.getGen_tot_W());
+						ioevent.put("genL1VA", avlDataIo.getmodbusData()
+								.getGenL1VA());
+						ioevent.put("genL2VA", avlDataIo.getmodbusData()
+								.getGenL2VA());
+						ioevent.put("genL3VA", avlDataIo.getmodbusData()
+								.getGenL3VA());
+						ioevent.put("gentotVA", avlDataIo.getmodbusData()
+								.getGentotVA());
+						ioevent.put("genL1VAr", avlDataIo.getmodbusData()
+								.getGenL1VAr());
+						ioevent.put("genL2VAr", avlDataIo.getmodbusData()
+								.getGenL2VAr());
+						ioevent.put("genL3VAr", avlDataIo.getmodbusData()
+								.getGenL3VAr());
+						ioevent.put("gentotVAr", avlDataIo.getmodbusData()
+								.getGentotVAr());
+						ioevent.put("genPFL1", avlDataIo.getmodbusData()
+								.getGenPFL1());
+						ioevent.put("genPFL2", avlDataIo.getmodbusData()
+								.getGenPFL2());
+						ioevent.put("genPFL3", avlDataIo.getmodbusData()
+								.getGenPFL3());
+						ioevent.put("genPFAvg", avlDataIo.getmodbusData()
+								.getGenPFAvg());
+						ioevent.put("genFullPower", avlDataIo.getmodbusData()
+								.getGenFullPower());
+						ioevent.put("genFullVAr", avlDataIo.getmodbusData()
+								.getGenFullVAr());
+						ioevent.put("mains_tot_W", avlDataIo.getmodbusData()
+								.getMains_tot_W());
+						ioevent.put("mainsL1VA", avlDataIo.getmodbusData()
+								.getMainsL1VA());
+						ioevent.put("mainsL2VA", avlDataIo.getmodbusData()
+								.getMainsL2VA());
+						ioevent.put("mainsL3VA", avlDataIo.getmodbusData()
+								.getMainsL3VA());
+						ioevent.put("mainstotVA", avlDataIo.getmodbusData()
+								.getMainstotVA());
+						ioevent.put("mainsL1VAr", avlDataIo.getmodbusData()
+								.getMainsL1VAr());
+						ioevent.put("mainsL2VAr", avlDataIo.getmodbusData()
+								.getMainsL2VAr());
+						ioevent.put("mainsL3VAr", avlDataIo.getmodbusData()
+								.getMainsL3VAr());
+						ioevent.put("mainstotVAr", avlDataIo.getmodbusData()
+								.getMainstotVAr());
+						ioevent.put("mainsPFL1", avlDataIo.getmodbusData()
+								.getMainsPFL1());
+						ioevent.put("mainsPFL2", avlDataIo.getmodbusData()
+								.getMainsPFL2());
+						ioevent.put("mainsPFL3", avlDataIo.getmodbusData()
+								.getMainsPFL3());
+						ioevent.put("mainsPFAvg", avlDataIo.getmodbusData()
+								.getMainsPFAvg());
+						break;
+					case 4:
+						isFourthReq = true;
+						ioevent.put("genL1lag", avlDataIo.getmodbusData()
+								.getGenL1lag());
+						ioevent.put("genL2lag", avlDataIo.getmodbusData()
+								.getGenL2lag());
+						ioevent.put("genL3lag", avlDataIo.getmodbusData()
+								.getGenL3lag());
+						ioevent.put("gentotlag", avlDataIo.getmodbusData()
+								.getGentotlag());
+						ioevent.put("genL1FullPower", avlDataIo.getmodbusData()
+								.getGenL1FullPower());
+						ioevent.put("genL2FullPower", avlDataIo.getmodbusData()
+								.getGenL2FullPower());
+						ioevent.put("genL3FullPower", avlDataIo.getmodbusData()
+								.getGenL3FullPower());
+						break;
+					case 5:
+						isFifthReq = true;
+						ioevent.put("currentTime", avlDataIo.getmodbusData()
+								.getCurrentTime());
+						ioevent.put("timeToNextEngineMainatenance", avlDataIo
+								.getmodbusData()
+								.getTimeToNextEngineMainatenance());
+						ioevent.put("timeOfNextEngineMainatenance", avlDataIo
+								.getmodbusData()
+								.getTimeOfNextEngineMainatenance());
+						ioevent.put("engineRunTime", avlDataIo.getmodbusData()
+								.getEngineRunTime());
+						ioevent.put("genPositiveKWH", avlDataIo.getmodbusData()
+								.getGenPositiveKWH());
+						ioevent.put("genNegativeKWH", avlDataIo.getmodbusData()
+								.getGenNegativeKWH());
+						ioevent.put("genKVAH", avlDataIo.getmodbusData()
+								.getGenKVAH());
+						ioevent.put("genKVArH", avlDataIo.getmodbusData()
+								.getGenKVArH());
+						ioevent.put("numberOfStart", avlDataIo.getmodbusData()
+								.getNumberOfStart());
+						ioevent.put("mainsPositiveKWH", avlDataIo
+								.getmodbusData().getMainsPositiveKWH());
+						ioevent.put("mainsNegativeKWH", avlDataIo
+								.getmodbusData().getMainsNegativeKWH());
+						ioevent.put("mainsKVAH", avlDataIo.getmodbusData()
+								.getMainsKVAH());
+						ioevent.put("mainsKVArH", avlDataIo.getmodbusData()
+								.getMainsKVArH());
+						ioevent.put("busPositiveKWH", avlDataIo.getmodbusData()
+								.getBusPositiveKWH());
+						ioevent.put("busNegativeKWH", avlDataIo.getmodbusData()
+								.getBusNegativeKWH());
+						ioevent.put("busKVAH", avlDataIo.getmodbusData()
+								.getBusKVAH());
+						ioevent.put("busKVArH", avlDataIo.getmodbusData()
+								.getBusKVArH());
+						ioevent.put("fuelUsed", avlDataIo.getmodbusData()
+								.getFuelUsed());
+						ioevent.put("maxPositiveMains_ROCOF", avlDataIo
+								.getmodbusData().getMaxPositiveMains_ROCOF());
+						ioevent.put("maxNegativeMains_ROCOF", avlDataIo
+								.getmodbusData().getMaxNegativeMains_ROCOF());
+						ioevent.put("maxPositiveMains_Vector", avlDataIo
+								.getmodbusData().getMaxPositiveMains_Vector());
+						ioevent.put("maxNegativeMains_Vector", avlDataIo
+								.getmodbusData().getMaxNegativeMains_Vector());
+						ioevent.put(
+								"timeToNextEngineMainatenanceAlerm1",
+								avlDataIo
+										.getmodbusData()
+										.getTimeToNextEngineMainatenanceAlerm1());
+						ioevent.put(
+								"timeOfNextEngineMainatenanceAlerm1",
+								avlDataIo
+										.getmodbusData()
+										.getTimeOfNextEngineMainatenanceAlerm1());
+						ioevent.put(
+								"timeToNextEngineMainatenanceAlerm2",
+								avlDataIo
+										.getmodbusData()
+										.getTimeToNextEngineMainatenanceAlerm2());
+						ioevent.put(
+								"timeOfNextEngineMainatenanceAlerm2",
+								avlDataIo
+										.getmodbusData()
+										.getTimeOfNextEngineMainatenanceAlerm2());
+						ioevent.put(
+								"timeToNextEngineMainatenanceAlerm3",
+								avlDataIo
+										.getmodbusData()
+										.getTimeToNextEngineMainatenanceAlerm3());
+						break;
+					case 6:
+						isSixthReq = true;
+						if (avlDataIo.getmodbusData().getAlarm() != null
+								&& !avlDataIo.getmodbusData().getAlarm()
+										.equalsIgnoreCase("null")) {
+							if (!ioevent.has("alarm"))
+								ioevent.put("alarm", avlDataIo.getmodbusData()
+										.getAlarm());
+							else
+								ioevent.put("alarm", ioevent.get("alarm") + ","
+										+ avlDataIo.getmodbusData().getAlarm());
+						}
+						break;
+					case 7:
+						isSeventhReq = true;
+						break;
+					case 8:
+						ioevent.put("rV", avlDataIo.getmodbusData().getrV());
+						ioevent.put("yV", avlDataIo.getmodbusData().getyV());
+						ioevent.put("bV", avlDataIo.getmodbusData().getbV());
+						ioevent.put("rC", avlDataIo.getmodbusData().getrC());
+						ioevent.put("yC", avlDataIo.getmodbusData().getyC());
+						ioevent.put("bC", avlDataIo.getmodbusData().getbC());
+						ioevent.put("rP", avlDataIo.getmodbusData().getrP());
+						ioevent.put("yP", avlDataIo.getmodbusData().getyP());
+						ioevent.put("bP", avlDataIo.getmodbusData().getbP());
+						ioevent.put("pvIV", avlDataIo.getmodbusData().getPvV());
+						ioevent.put("pvIC", avlDataIo.getmodbusData().getPvC());
+						ioevent.put("sptot", avlDataIo.getmodbusData()
+								.getSptot());
+						ioevent.put("setoday", avlDataIo.getmodbusData()
+								.getSetoday());
+						ioevent.put("setot", avlDataIo.getmodbusData()
+								.getSetot());
+						ioevent.put("batBV", avlDataIo.getmodbusData()
+								.getBatBV());
+						ioevent.put("batCC", avlDataIo.getmodbusData()
+								.getBatCC());
+						ioevent.put("batDC", avlDataIo.getmodbusData()
+								.getBatDC());
+						ioevent.put("batBT", avlDataIo.getmodbusData()
+								.getBatBT());
+						ioevent.put("batBP", avlDataIo.getmodbusData()
+								.getBatBP());
+						ioevent.put("batCE", avlDataIo.getmodbusData()
+								.getBatCE());
+						ioevent.put("batDE", avlDataIo.getmodbusData()
+								.getBatDE());
+						ioevent.put("batSOC", avlDataIo.getmodbusData()
+								.getBatSOC());
+						ioevent.put("mpptBC", avlDataIo.getmodbusData()
+								.getMpptBC());
+						ioevent.put("mpptBP", avlDataIo.getmodbusData()
+								.getMpptBP());
+						ioevent.put("acLCR", avlDataIo.getmodbusData()
+								.getAcLCR());
+						ioevent.put("acLCY", avlDataIo.getmodbusData()
+								.getAcLCY());
+						ioevent.put("acLCB", avlDataIo.getmodbusData()
+								.getAcLCB());
+						ioevent.put("acLF", avlDataIo.getmodbusData().getAcLF());
+						ioevent.put("acLPF", avlDataIo.getmodbusData()
+								.getAcLPF());
+						ioevent.put("acLPMaxDay", avlDataIo.getmodbusData()
+								.getAcLPMaxDay());
+						ioevent.put("acLVR", avlDataIo.getmodbusData()
+								.getAcLVR());
+						ioevent.put("acLVY", avlDataIo.getmodbusData()
+								.getAcLVY());
+						ioevent.put("acLVB", avlDataIo.getmodbusData()
+								.getAcLVB());
+						ioevent.put("acLP", avlDataIo.getmodbusData().getAcLP());
+						ioevent.put("acLEtoday", avlDataIo.getmodbusData()
+								.getAcLEtoday());
+						ioevent.put("acLETP", avlDataIo.getmodbusData()
+								.getAcLETP());
+						ioevent.put("acLETNP", avlDataIo.getmodbusData()
+								.getAcLETNP());
+						ioevent.put("energyMeterCount", avlDataIo
+								.getmodbusData().getEnergyMeterCount());
+						ioevent.put("typeOfInverter", avlDataIo.getmodbusData()
+								.getTypeOfInverter());
+						ioevent.put("lvdLevel", avlDataIo.getmodbusData()
+								.getLvdLevel());
+						ioevent.put("dgStartCommandEnable", avlDataIo
+								.getmodbusData().getDgStartCommandEnable());
+						ioevent.put("dgRuntimeSettings", avlDataIo
+								.getmodbusData().getDgRuntimeSettings());
+						ioevent.put("dgStartBV", avlDataIo.getmodbusData()
+								.getDgStartBV());
+						ioevent.put("bulkV", avlDataIo.getmodbusData()
+								.getBulkV());
+						ioevent.put("floatV", avlDataIo.getmodbusData()
+								.getFloatV());
+						ioevent.put("acChargerStartV", avlDataIo
+								.getmodbusData().getAcChargerStartV());
+						ioevent.put("acChargerStopV", avlDataIo.getmodbusData()
+								.getAcChargerStopV());
+						ioevent.put("gridChargerBatCLimit", avlDataIo
+								.getmodbusData().getGridChargerBatCLimit());
+						ioevent.put("maxBatCL", avlDataIo.getmodbusData()
+								.getMaxBatCL());
+						ioevent.put("maxExportPower", avlDataIo.getmodbusData()
+								.getMaxExportPower());
+						if (avlDataIo.getmodbusData().getAlarm() != null
+								&& !avlDataIo.getmodbusData().getAlarm()
+										.equalsIgnoreCase("null")) {
+							if (!ioevent.has("alarm"))
+								ioevent.put("alarm", avlDataIo.getmodbusData()
+										.getAlarm());
+							else
+								ioevent.put("alarm", ioevent.get("alarm") + ","
+										+ avlDataIo.getmodbusData().getAlarm());
+						}
+						isEighthReq = true;
+						break;
+					case 9:
+						ioevent.put("windSpeed", avlDataIo.getmodbusData()
+								.getWindSpeed());
+						ioevent.put("windDirection", avlDataIo.getmodbusData()
+								.getWindDirection());
+						ioevent.put("irradiance", avlDataIo.getmodbusData()
+								.getIrradiance());
+						ioevent.put("pvCellTemp", avlDataIo.getmodbusData()
+								.getPvCellTemp());
+						ioevent.put("ambientTemperature1", avlDataIo
+								.getmodbusData().getAmbientTemperature1());
+						ioevent.put("ambientTemperature2", avlDataIo
+								.getmodbusData().getAmbientTemperature2());
+						ioevent.put("dI1", avlDataIo.getmodbusData().getdI1());
+						ioevent.put("dI2", avlDataIo.getmodbusData().getdI2());
+						ioevent.put("dI3", avlDataIo.getmodbusData().getdI3());
+						ioevent.put("dI4", avlDataIo.getmodbusData().getdI4());
+						ioevent.put("dI5", avlDataIo.getmodbusData().getdI5());
+						ioevent.put("dI6", avlDataIo.getmodbusData().getdI6());
+						ioevent.put("dI7", avlDataIo.getmodbusData().getdI7());
+						ioevent.put("dI8", avlDataIo.getmodbusData().getdI8());
+						ioevent.put("dO1", avlDataIo.getmodbusData().getdO1());
+						ioevent.put("dO2", avlDataIo.getmodbusData().getdO2());
+						ioevent.put("dO3", avlDataIo.getmodbusData().getdO3());
+						ioevent.put("dO4", avlDataIo.getmodbusData().getdO4());
+						ioevent.put("dO5", avlDataIo.getmodbusData().getdO5());
+						ioevent.put("dO6", avlDataIo.getmodbusData().getdO6());
+						ioevent.put("dO7", avlDataIo.getmodbusData().getdO7());
+						ioevent.put("dO8", avlDataIo.getmodbusData().getdO8());
+						ioevent.put("analog5", avlDataIo.getmodbusData()
+								.getAnalog5());
+						isNinthReq = true;
+						break;
+					case 10:
+						ioevent.put("solarV_S1", avlDataIo.getmodbusData()
+								.getSolarV_S1());
+						ioevent.put("solarC_S1", avlDataIo.getmodbusData()
+								.getSolarC_S1());
+						ioevent.put("solarE_S1", avlDataIo.getmodbusData()
+								.getSolarE_S1());
+						ioevent.put("totSolarE1_S1", avlDataIo.getmodbusData()
+								.getTotSolarE1_S1());
+						ioevent.put("totSolarE2_S1", avlDataIo.getmodbusData()
+								.getTotSolarE2_S1());
+						ioevent.put("solarPower_S1", avlDataIo.getmodbusData()
+								.getSolarPower_S1());
+						isTenthReq = true;
+						break;
+					case 11:
+						ioevent.put("solarV_S2", avlDataIo.getmodbusData()
+								.getSolarV_S2());
+						ioevent.put("solarC_S2", avlDataIo.getmodbusData()
+								.getSolarC_S2());
+						ioevent.put("solarE_S2", avlDataIo.getmodbusData()
+								.getSolarE_S2());
+						ioevent.put("totSolarE1_S2", avlDataIo.getmodbusData()
+								.getTotSolarE1_S2());
+						ioevent.put("totSolarE2_S2", avlDataIo.getmodbusData()
+								.getTotSolarE2_S2());
+						ioevent.put("solarPower_S2", avlDataIo.getmodbusData()
+								.getSolarPower_S2());
+						isEleventhReq = true;
+						break;
+					case 12:
+						ioevent.put("solarV_S3", avlDataIo.getmodbusData()
+								.getSolarV_S3());
+						ioevent.put("solarC_S3", avlDataIo.getmodbusData()
+								.getSolarC_S3());
+						ioevent.put("solarE_S3", avlDataIo.getmodbusData()
+								.getSolarE_S3());
+						ioevent.put("totSolarE1_S3", avlDataIo.getmodbusData()
+								.getTotSolarE1_S3());
+						ioevent.put("totSolarE2_S3", avlDataIo.getmodbusData()
+								.getTotSolarE2_S3());
+						ioevent.put("solarPower_S3", avlDataIo.getmodbusData()
+								.getSolarPower_S3());
+						isTwelthReq = true;
+						break;
+					}
+
+				}
+
+				/* EnergyMeter Calculation Start */
+				// int energyMeterCount = ioevent.getInt("energyMeterCount");
+				// int solarPowerTotal = 0;
+				// int solarEnergyTotal = 0;
+				// for (int i = 1; i <= energyMeterCount; i++) {
+				// solarPowerTotal += ioevent.getInt("solarPower_S" + i);
+				// solarEnergyTotal += ioevent.getInt("solarE_S" + i);
+				// }
+				// if (energyMeterCount > 0) {
+				// ioevent.put("sptot", solarPowerTotal);
+				// ioevent.put("setot", solarEnergyTotal);
+				// }
+				/* EnergyMeter Calculation End */
+
+				vehicleEvent.setIoevent(ioevent.toString());
+				avlDataMap.get(vehicle.getVin()).clear();
+				// if (!(isFirstReq && isSecondReq && isThirdReq && isFourthReq
+				// && isFifthReq && isSixthReq && isSeventhReq && isEighthReq /*
+				// * &&
+				// * isNinthReq
+				// * &&
+				// * isTenthReq
+				// * &&
+				// * isEleventhReq
+				// * &&
+				// * isTwelthReq
+				// */))
+				// vehicleEvent.setIoevent("{}");
+
+			} else {
+				LOGGER.info("Return vin:" + vehicle.getVin());
+				LOGGER.info("Map Size: "
+						+ avlDataMap.get(vehicle.getVin()).size());
+				return null;
+			}
+		} catch (Exception e) {
+			LOGGER.error("SolarDeviceProtocolHandler: PreparevehicleEvents:"
+					+ e);
+			e.printStackTrace();
+		}
+		if (vehicleEvent.getIoevent() == null) {
+			vehicleEvent.setIoevent("{}");
+		}
+		return vehicleEvent;
+	}
+
+	public float distance(float lat1, float lng1, float lat2, float lng2) {
+		double earthRadius = 6371000; // meters
+		double dLat = Math.toRadians(lat2 - lat1);
+		double dLng = Math.toRadians(lng2 - lng1);
+		double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+				+ Math.cos(Math.toRadians(lat1))
+				* Math.cos(Math.toRadians(lat2)) * Math.sin(dLng / 2)
+				* Math.sin(dLng / 2);
+		double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+		float dist = (float) (earthRadius * c);
+
+		return dist;
+	}
+
+	public String sendCommand(String command, Socket SolarDeviceSocket) {
+		String result = null;
+		LOGGER.info("Entered send command:" + command);
+		try {
+			DataOutputStream out = new DataOutputStream(
+					SolarDeviceSocket.getOutputStream());
+			String type = command.split(",")[0];
+			String imei = command.split(",")[1];
+			VehicleComposite vehicleComposite = fleetTrackingDeviceListenerBO
+					.getVehicle(imei);
+			LOGGER.info("type:" + type);
+			if (type.split("_")[0].equalsIgnoreCase("cutOffEngine")) {
+				String cutOffCommand = "<REQ," + imei
+						+ ",0A10C1000001020001C46C;";
+				LOGGER.info(cutOffCommand);
+				out.write(cutOffCommand.getBytes(), 0, cutOffCommand.length());
+				int i = 0;
+				while (i < 120) {
+					if (commandStatus != null) {
+						if (commandStatus.startsWith("ACK")) {
+							result = "cutOffEngine OK";
+							fleetTrackingDeviceListenerBO.updateLockStatus(
+									vehicleComposite.getVehicle(), 1);
+						} else if (commandStatus.startsWith("NACK"))
+							result = null;
+						else if (commandStatus
+								.equalsIgnoreCase("Invalid Request"))
+							result = null;
+						else
+							result = commandStatus;
+						commandStatus = null;
+						break;
+					} else {
+						Thread.sleep(1000);
+					}
+					i++;
+				}
+			} else if (type.split("_")[0].equalsIgnoreCase("restoreEngine")) {
+				String cutOffCommand = "<REQ," + imei
+						+ ",0A10C1000001020001C46C;";
+				LOGGER.info(cutOffCommand);
+				out.write(cutOffCommand.getBytes(), 0, cutOffCommand.length());
+				int i = 0;
+				while (i < 120) {
+					if (commandStatus != null) {
+						if (commandStatus.startsWith("ACK")) {
+							result = "restoreEngine OK";
+							fleetTrackingDeviceListenerBO.updateLockStatus(
+									vehicleComposite.getVehicle(), 0);
+						} else if (commandStatus.startsWith("NACK"))
+							result = null;
+						else if (commandStatus
+								.equalsIgnoreCase("Invalid Request"))
+							result = null;
+						else
+							result = commandStatus;
+						commandStatus = null;
+						break;
+					} else {
+						Thread.sleep(1000);
+					}
+					i++;
+				}
+			}
+		} catch (Exception e) {
+			LOGGER.error("SendCommand : " + e);
+			e.printStackTrace();
+		}
+		return result;
+	}
+
+	public String sendNewCommand(String command, Socket clientSocket) {
+		// TODO Auto-generated method stub
+
+		String result = null;
+		LOGGER.info("Entered send New command:" + command);
+		try {
+			String type = command.split(",")[0];
+			String imei = command.split(",")[1];
+			DataOutputStream out = new DataOutputStream(
+					clientSocket.getOutputStream());
+			VehicleComposite vehicleComposite = fleetTrackingDeviceListenerBO
+					.getVehicle(imei);
+			String registerString = fleetTrackingDeviceListenerBO
+					.getPreferencesData("SolarRegisterValues", vehicleComposite
+							.getVehicle().getCompanyId());
+			String swap = fleetTrackingDeviceListenerBO.getPreferencesData(
+					"IsSwap", vehicleComposite.getVehicle().getCompanyId());
+			JSONObject registerAddress = new JSONObject(registerString);
+			String registerValue = Integer.toHexString(Integer.parseInt(type
+					.split("_")[1]));
+			while (registerValue.length() < 4) {
+				registerValue = "0" + registerValue;
+			}
+			String CommandString = "0206"
+					+ registerAddress.getString(type.split("_")[0])
+					+ registerValue;
+			String crc = SolarByteWrapper.crcCalculation(SolarByteWrapper
+					.hexStringToByteArray(CommandString));
+			if (swap.equalsIgnoreCase("true")) {
+				crc = crc.substring(2, 4) + crc.substring(0, 2);
+			}
+			String commandData = "<REQ," + imei + "," + CommandString + crc
+					+ ";";
+			LOGGER.error("Command Data for Solar : " + commandData);
+			out.write(commandData.getBytes(), 0, commandData.length());
+			int i = 0;
+			while (i < 120) {
+				if (commandStatus != null) {
+					result = commandStatus;
+					commandStatus = null;
+					break;
+				} else {
+					Thread.sleep(1000);
+				}
+				i++;
+			}
+		} catch (Exception e) {
+			LOGGER.error("Send New Command : " + e);
+			e.printStackTrace();
+		}
+		return result;
+	}
+}

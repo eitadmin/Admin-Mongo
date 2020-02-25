@@ -1,0 +1,47 @@
+<?xml version="1.0"?>
+<project name="ejbproj" default="deploy">
+	
+	<property name="build.dir" value="build" />
+	<property name="jarName" value="LTSAdminEJB.jar" />
+	<property name="JBOSS" value="/home/ubuntu/jboss_admin_9090" />
+	<property name="JBOSSLIB" value="${JBOSS}/modules/javax" />
+	
+	<path id="project.class.path">
+		<fileset dir="../LTSAdminEAR/ear/lib" includes="*.jar"/>
+		<fileset dir="../LTSAdminEAR/" includes="*.jar"/>
+		<fileset dir="${JBOSSLIB}/persistence/api/main" includes="*.jar"/>
+	<fileset dir="${JBOSSLIB}/ejb/api/main" includes="*.jar"/>
+	<fileset dir="${JBOSSLIB}/servlet/api/main" includes="*.jar"/>
+	<fileset dir="${JBOSSLIB}/mail/api/main" includes="*.jar"/>
+	<fileset
+            dir="../LTSCommonUtil"
+            includes="util.jar" />
+	</path>
+  
+   <target name="clean" description="Cleans this project">
+    <delete dir="${build.dir}" failonerror="false" />
+	<delete dir="../LTSAdminEAR/ear/${jarName}" failonerror="false" />
+  </target>
+  
+  <target name="compile" depends="clean" description="Compile java source to bytecode">
+	<mkdir dir="${build.dir}"/>
+    <javac srcdir="src" includes="**/*.java"  encoding="utf-8"
+        destdir="build" excludes="*.java"
+        source="1.7" target="1.7" nowarn="true"
+        debug="true" debuglevel="lines,vars,source" includeantruntime="false">
+		 <classpath refid="project.class.path"/>
+    </javac>
+  </target>
+  
+  <target name="deploy" depends="compile" description="Deploy this jar to Ear location">
+      <copy todir="${build.dir}" > <fileset dir="src" excludes="*.java"/> </copy>
+      <jar destfile="../LTSAdminEAR/ear/${jarName}" >
+            <fileset
+                dir="${build.dir}"
+                excludes="**/Test.class" />
+        </jar>
+<!-- <mkdir dir="../LTSAdminEAR/ear/${jarName}"/> -->
+<!-- <copy todir="../LTSAdminEAR/ear/${jarName}" > <fileset dir="${build.dir}"/> </copy> -->
+  </target>
+  
+</project>

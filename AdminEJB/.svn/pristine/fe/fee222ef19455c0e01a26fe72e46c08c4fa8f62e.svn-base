@@ -1,0 +1,279 @@
+package com.eiw.device.handler;
+
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.InputStream;
+import java.net.URL;
+import java.net.URLConnection;
+import java.util.Calendar;
+import java.util.Date;
+
+import org.apache.commons.io.IOUtils;
+import org.jboss.logging.Logger;
+import org.json.JSONObject;
+
+import com.eiw.device.ejb.FleetTrackingDeviceListenerBORemote;
+import com.eiw.device.ejb.VehicleComposite;
+import com.eiw.device.handler.method.SKTHandlerMethods;
+import com.eiw.device.meitrack.Position;
+import com.eiw.server.TimeZoneUtil;
+import com.eiw.server.bo.BOFactory;
+import com.eiw.server.fleettrackingpu.Vehicle;
+import com.eiw.server.fleettrackingpu.Vehicleevent;
+import com.eiw.server.fleettrackingpu.VehicleeventId;
+
+public class SpectrumDeviceHandler extends DeviceHandler {
+	private static final Logger LOGGER = Logger.getLogger("listener");
+	FleetTrackingDeviceListenerBORemote entityManagerService = BOFactory
+			.getFleetTrackingDeviceListenerBORemote();
+	private SKTHandlerMethods sktHandlerMethods;
+
+	public void handleDevice() {
+		LOGGER.info("Entered Spectrum five mins Handle Device:" + new Date());
+		sktHandlerMethods = new SKTHandlerMethods();
+		DataInputStream clientSocketDis = null;
+		DataOutputStream dos = null;
+		try {
+			this.clientSocket.setSoTimeout(1500000);
+			clientSocketDis = new DataInputStream(
+					this.clientSocket.getInputStream());
+
+			// while (true) {
+			String deviceData = clientSocketDis.readLine();
+			if (deviceData == null) {
+				LOGGER.error("SpectrumDeviceHandler handleDevice deviceData is null");
+				return;
+			}
+			String[] dataArr = deviceData.split("#");
+			for (String data : dataArr) {
+				if (!data.substring(0, 2).equalsIgnoreCase("@@")) {
+					return;
+				}
+				data = data.substring(2);
+				LOGGER.info("Data received from device :: " + data);
+				String[] rawData = data.split(",");
+				String imeiNo = rawData[0];
+				VehicleComposite vehicleComposite = entityManagerService
+						.getVehicle(imeiNo);
+
+				if (vehicleComposite == null) {
+					LOGGER.error("SpectrumDeviceHandler: handleDevice: Received IMEI No is invalid... returning... "
+							+ imeiNo);
+					return;
+				}
+				super.deviceImei = imeiNo;
+				String rawData10 = rawData[10];
+				if (rawData10 == null) {
+					LOGGER.error("SpectrumDeviceHandler handleDevice rawData10 is null");
+					return;
+				}
+				if (rawData10.equalsIgnoreCase("A")
+						|| rawData10.equalsIgnoreCase("D")) {
+					insertService(vehicleComposite, rawData,
+							entityManagerService);
+				}
+			}
+			// }
+		} catch (Exception e) {
+			LOGGER.error("SpectrumDeviceHandler: Close client socket" + e);
+			e.printStackTrace();
+		} finally {
+			cleanUpSockets(this.clientSocket, clientSocketDis, dos);
+			LOGGER.info("DeviceCommunicatorThread:DeviceCommunicator Completed");
+		}
+		LOGGER.info("SpectrumDeviceHandler: Ended successfully::: ");
+	}
+
+	private void insertService(VehicleComposite vehicleComposite,
+			String[] rawData,
+			FleetTrackingDeviceListenerBORemote fleetTrackingDeviceListenerBO) {
+		try {
+			Vehicleevent vehicleEvent = prepareVehicleEvents(
+					vehicleComposite.getVehicle(), rawData,
+					fleetTrackingDeviceListenerBO, vehicleComposite);
+			LOGGER.info("VehicleEvents prepared for vin="
+					+ vehicleEvent.getId().getVin() + " at " + new Date());
+			/**
+			 * For SKT
+			 */
+			Position position = getPositionObject(vehicleEvent);
+			String imeiNo = String.valueOf(position.getDeviceId());
+
+			LOGGER.info("SpectrumDeviceHandler : Time:: " + position.getTime()
+					+ " and SpectrumImei = " + position.getDeviceId()
+					+ " and RFID = " + position.getRfid() + " and Company = "
+					+ vehicleComposite.getVehicle().getCompanyId()
+					+ " and Branch = "
+					+ vehicleComposite.getVehicle().getBranchId());
+
+			sktHandlerMethods.persistEventAndGenerateAlert(position,
+					vehicleComposite, imeiNo, "spectrum", vehicleEvent);
+
+			LOGGER.info("VehicleEvents persisted");
+		} catch (Exception e) {
+			LOGGER.error("Exception while persisting data :: " + e);
+		}
+	}
+
+	/**
+	 * This method for set data in Position Object from VehicleEvents object for
+	 * SKT
+	 * 
+	 * @param vehicleEvent
+	 * @return position
+	 */
+	private Position getPositionObject(Vehicleevent vehicleEvent) {
+		Position position = new Position();
+		position.setDeviceId(Long.valueOf(deviceImei));
+		position.setRfid("1");
+		position.setTime(vehicleEvent.getId().getEventTimeStamp());
+		position.setLatitude(Double.valueOf(vehicleEvent.getLatitude()));
+		position.setLongitude(Double.valueOf(vehicleEvent.getLongitude()));
+		position.setSpeed(Double.valueOf(vehicleEvent.getSpeed()));
+		return position;
+	}
+
+	private Vehicleevent prepareVehicleEvents(Vehicle vehicle,
+			String[] rawData,
+			FleetTrackingDeviceListenerBORemote entityManagerService,
+			VehicleComposite vehicleComposite) {
+		Vehicleevent vehicleEvent = new Vehicleevent();
+		try {
+			// String region = entityManagerService.getTimeZoneRegion(vehicle
+			// .getVin());
+			String region = vehicleComposite.getTimeZoneRegion();
+			Vehicleevent ve = entityManagerService.getPrevVe(vehicle.getVin());
+			VehicleeventId vehicleeventId = new VehicleeventId();
+			float latitude = Double.valueOf(Float.parseFloat(rawData[4]) / 100)
+					.intValue()
+					+ (Float.parseFloat(rawData[4]) - Double.valueOf(
+							Float.parseFloat(rawData[4]) / 100).intValue() * 100)
+					/ 60;
+			float longitude = Double
+					.valueOf(Float.parseFloat(rawData[6]) / 100).intValue()
+					+ (Float.parseFloat(rawData[6]) - Double.valueOf(
+							Float.parseFloat(rawData[6]) / 100).intValue() * 100)
+					/ 60;
+			if (!rawData[5].equalsIgnoreCase("N")) {
+				latitude = -latitude;
+			}
+			if (!rawData[7].equalsIgnoreCase("E")) {
+				longitude = -longitude;
+			}
+			int speed = (int) (Float.valueOf(rawData[8]) * 1.852);
+			// System.out.println("Lat :: " + latitude + " Long :: " + longitude
+			// + " Speed :: " + speed);
+			vehicleEvent.setLongitude(longitude);
+			vehicleEvent.setLatitude(latitude);
+			vehicleEvent.setSpeed(speed);
+
+			Calendar cal = Calendar.getInstance();
+			cal.set(Calendar.YEAR,
+					2000 + Integer.parseInt(rawData[9].substring(4, 6).trim()));
+			cal.set(Calendar.MONTH,
+					Integer.parseInt(rawData[9].substring(2, 4).trim()) - 1);
+			cal.set(Calendar.DAY_OF_MONTH,
+					Integer.parseInt(rawData[9].substring(0, 2).trim()));
+			cal.set(Calendar.HOUR_OF_DAY,
+					Integer.parseInt(rawData[3].substring(0, 2).trim()));
+			cal.set(Calendar.MINUTE,
+					Integer.parseInt(rawData[3].substring(2, 4).trim()));
+			cal.set(Calendar.SECOND,
+					Integer.parseInt(rawData[3].substring(4, 6).trim()));
+			Date eventTimeStamp = cal.getTime();
+			// System.out.println("Date " + eventTimeStamp);
+			vehicleeventId.setVin(vehicle.getVin());
+			vehicleEvent.setId(vehicleeventId);
+			vehicleeventId.setEventTimeStamp(TimeZoneUtil.getDateTimeZone(
+					eventTimeStamp, region));
+			vehicleEvent.setServerTimeStamp(TimeZoneUtil.getDateInTimeZone());
+			vehicleEvent.setEngine((rawData[11].substring(0, 1).trim()
+					.equalsIgnoreCase("1")) ? true : false);
+			vehicleEvent.setDi1(Integer.parseInt(rawData[11].substring(0, 1)));
+			vehicleEvent.setDi2(Integer.parseInt(rawData[11].substring(1, 2)));
+			vehicleEvent.setAi1(Integer.parseInt(rawData[14]));
+			vehicleEvent.setAi2(Integer.parseInt(rawData[15]));
+			String towedOdometer;
+			if (!SKTHandlerMethods.odometerForTowed.isEmpty()
+					&& SKTHandlerMethods.odometerForTowed.get(vehicle
+							.getCompanyId()) != null) {
+				towedOdometer = SKTHandlerMethods.odometerForTowed.get(vehicle
+						.getCompanyId());
+			} else {
+				towedOdometer = entityManagerService.getCompanySettings(
+						"towedCalc", vehicle.getCompanyId());
+				SKTHandlerMethods.odometerForTowed.put(vehicle.getCompanyId(),
+						towedOdometer);
+			}
+			if (towedOdometer.equalsIgnoreCase("1")) {
+				if (vehicleEvent.getSpeed() != 0) {
+					float odometer = distanceMatrix(ve.getLatitude(),
+							ve.getLongitude(), vehicleEvent.getLatitude(),
+							vehicleEvent.getLongitude());
+					vehicleEvent.setOdometer((long) odometer);
+				}
+			} else {
+				if (ve != null && vehicleEvent.getEngine()
+						&& vehicleEvent.getSpeed() != 0) {
+					float odometer = distanceMatrix(ve.getLatitude(),
+							ve.getLongitude(), vehicleEvent.getLatitude(),
+							vehicleEvent.getLongitude());
+					vehicleEvent.setOdometer((long) odometer);
+				}
+			}
+			// vehicleEvent.setOdometer(0L);
+		} catch (Exception e) {
+			LOGGER.error("SpectrumDeviceHandler: PreparevehicleEvents:", e);
+		}
+		return vehicleEvent;
+	}
+
+	public float distance(float lat1, float lng1, float lat2, float lng2) {
+		double earthRadius = 6371000; // meters
+		double dLat = Math.toRadians(lat2 - lat1);
+		double dLng = Math.toRadians(lng2 - lng1);
+		double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+				+ Math.cos(Math.toRadians(lat1))
+				* Math.cos(Math.toRadians(lat2)) * Math.sin(dLng / 2)
+				* Math.sin(dLng / 2);
+		double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+		float dist = (float) (earthRadius * c);
+
+		return dist;
+	}
+
+	public float distanceMatrix(float lat1, float lng1, float lat2, float lng2) {
+		try {
+			URL url1 = new URL(
+					"https://maps.googleapis.com/maps/api/distancematrix/json?origins="
+							+ lat1
+							+ ","
+							+ lng1
+							+ "&destinations="
+							+ lat2
+							+ ","
+							+ lng2
+							+ "&mode=driving&language=en-EN&sensor=false&key=AIzaSyAb94T4OXJmVss7ArXmkKHb11PQ0fw6lyA");
+			URLConnection con = url1.openConnection();
+			InputStream in = con.getInputStream();
+			String encoding = "UTF-8";
+			String statusText = IOUtils.toString(in, encoding);
+			if (statusText == null || !statusText.contains("distance")) {
+				return distance(lat1, lng1, lat2, lng2);
+			}
+			JSONObject json = new JSONObject(statusText);
+			String rows = json.getString("rows");
+			JSONObject rowObject = new JSONObject(rows.substring(1,
+					rows.length() - 1));
+			String elements = rowObject.getString("elements");
+			JSONObject elementsObject = new JSONObject(elements.substring(1,
+					elements.length() - 1));
+			String distance = elementsObject.getString("distance");
+			JSONObject distanceObject = new JSONObject(distance);
+			return Float.valueOf(distanceObject.getString("value"));
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return distance(lat1, lng1, lat2, lng2);
+	}
+}

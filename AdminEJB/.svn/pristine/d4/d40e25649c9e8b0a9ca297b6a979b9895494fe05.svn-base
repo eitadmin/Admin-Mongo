@@ -1,0 +1,129 @@
+package com.eiw.device.apmkt.ais1401A;
+
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+
+import org.jboss.logging.Logger;
+
+import com.eiw.device.handler.APMKT_AIS1401ADeviceHandler;
+import com.google.gwt.util.tools.shared.StringUtils;
+
+public class APMKT_AIS1401AByteWrapper {
+	private DataInputStream dis = null;
+	private DataOutputStream dos = null;
+	private String[] deviceData;
+	private String rawData;
+	private int length;
+	private String imei;
+	private static final Logger LOGGER = Logger.getLogger("listener");
+	private APMKT_AIS1401AGpsData APMKT_AIS1401AGpsData = new APMKT_AIS1401AGpsData();
+	private APMKT_AIS1401AHealthData APMKT_AIS1401AHealthData = new APMKT_AIS1401AHealthData();
+
+	public APMKT_AIS1401AByteWrapper(DataInputStream in, DataOutputStream out) {
+		this.dis = in;
+		this.dos = out;
+	}
+
+	public String[] getDeviceData() {
+		return deviceData;
+	}
+
+	public void setDeviceData(String[] deviceData) {
+		this.deviceData = deviceData;
+	}
+
+	public String getRawData() {
+		return rawData;
+	}
+
+	public void setRawData(String rawData) {
+		this.rawData = rawData;
+	}
+
+	public int getLength() {
+		return length;
+	}
+
+	public void setLength(int length) {
+		this.length = length;
+	}
+
+	public String getImei() {
+		return imei;
+	}
+
+	public void setImei(String imei) {
+		this.imei = imei;
+	}
+
+	public APMKT_AIS1401AGpsData getAPMKT_AIS1401AGpsData() {
+		return APMKT_AIS1401AGpsData;
+	}
+
+	public void setAPMKT_AIS1401AGpsData(
+			APMKT_AIS1401AGpsData aPMKT_AIS1401AGpsData) {
+		APMKT_AIS1401AGpsData = aPMKT_AIS1401AGpsData;
+	}
+
+	public APMKT_AIS1401AHealthData getAPMKT_AIS1401AHealthData() {
+		return APMKT_AIS1401AHealthData;
+	}
+
+	public void setAPMKT_AIS1401AHealthData(
+			APMKT_AIS1401AHealthData aPMKT_AIS1401AHealthData) {
+		APMKT_AIS1401AHealthData = aPMKT_AIS1401AHealthData;
+	}
+
+	public void unwrapDataFromStream() {
+		try {
+			LOGGER.info("Entered APMKT_AIS1401A wrapper");
+			StringBuilder sb = new StringBuilder();
+			while (true) {
+				sb.append((char) this.dis.readByte());
+				if (sb.toString().contains("*") || sb.toString().contains("\n")) {
+					int count = this.dis.available();
+					byte[] junk = new byte[count];
+					this.dis.readFully(junk);
+					break;
+				}
+			}
+			LOGGER.error("APMKT_AIS1401A Data = " + sb.toString());
+			this.rawData = sb.toString();
+			this.deviceData = this.rawData.split(",");
+			this.length = this.deviceData.length;
+
+			if (this.length <= 1) {
+				this.deviceData = this.rawData.split("\\$");
+				this.imei = this.deviceData[1];
+			}
+
+			else if (APMKT_AIS1401ADeviceHandler.packetType
+					.contains(this.deviceData[4])) {
+				LOGGER.error("------------ Ais140V3 GPS Data ------------ ");
+				this.imei = this.deviceData[7];
+				this.APMKT_AIS1401AGpsData.read(this.deviceData);
+			}
+
+			else if (this.deviceData[4].equalsIgnoreCase("NM")) {
+				this.imei = this.deviceData[3];
+				LOGGER.error("-----------Ais140V3 EMR Data  -------- ");
+				this.APMKT_AIS1401AGpsData.reademr(this.deviceData);
+			}
+
+			else if (deviceData[1].equalsIgnoreCase("101")) {
+				this.imei = this.deviceData[4];
+				LOGGER.error("------------ Ais140V3 Health Data ------------ ");
+				this.APMKT_AIS1401AHealthData.read(this.deviceData);
+			} 
+			
+			else {
+				
+				LOGGER.error("------------ Ais140V3 Packet Data ------------ ");
+				LOGGER.error(this.deviceData);
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+
+}
